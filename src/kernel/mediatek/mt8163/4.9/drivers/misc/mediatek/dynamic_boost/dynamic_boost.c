@@ -63,7 +63,7 @@ struct dboost_input_handle {
 };
 
 #define MAX_CORES_NUMBER nr_cpu_ids
-#define MAX_DURATION 10000
+#define MAX_DURATION 15000
 
 static ssize_t dynamic_boost_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
@@ -97,12 +97,14 @@ int set_dynamic_boost(int duration, int prio_mode)
 	unsigned long flags;
 	struct boost_state *state;
 
-	if (duration > MAX_DURATION ||
-	    prio_mode < 0 || prio_mode > PRIO_DEFAULT)
+	if (prio_mode < 0 || prio_mode > PRIO_DEFAULT)
 		return -EINVAL;
 
 	if (prio_mode == PRIO_DEFAULT || !duration)
 		return 0;
+
+	if (duration > MAX_DURATION)
+		duration = MAX_DURATION;
 
 	spin_lock_irqsave(&dboost.boost_lock, flags);
 

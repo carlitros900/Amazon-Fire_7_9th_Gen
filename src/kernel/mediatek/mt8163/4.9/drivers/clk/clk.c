@@ -2211,8 +2211,6 @@ static int clk_dump_enabled_clk(void)
 	struct clk_core *clk = NULL;
 	int cnt = 0;
 
-	printk("========== %s ==========\n", __func__);
-	printk("[name: __clk_get_enable_count|__clk_is_enabled]\n");
 	hlist_for_each_entry(clk, &clk_debug_list, debug_node) {
 		if (!clk)
 			continue;
@@ -2234,7 +2232,6 @@ static int clk_dump_enabled_clk(void)
 	}
 	if (cnt % 4 != 0)
 		printk("\n");
-	printk("========================================\n");
 
 	return 0;
 }
@@ -2275,6 +2272,42 @@ static const char * const *get_ignored_clk_names(size_t *num)
 		"clk_null",
 		"clk26m",
 		"clk32k",
+		"msdcpll",
+		"infra_dramc_26m",
+		"infra_audio",
+		"infra_auxadc",
+		"infra_msdc0",
+		"infra_msdc1",
+		"infra_msdc3",
+		"infra_therm",
+		"infra_scpsys",
+		"scp_sel",
+		"aud_intbus_sel",
+		"audio_sel",
+		"msdc50_3_sel",
+		"msdc30_1_sel",
+		"msdc30_0_sel",
+		"ddrphycfg_sel",
+		"mem_sel",
+		"msdcpll_d2",
+		"msdcpll",
+		"infra_dramc_26m",
+		"infra_audio",
+		"infra_ap_dma",
+		"infra_auxadc",
+		"infra_msdc0",
+		"infra_msdc3",
+		"infra_btif",
+		"infra_therm",
+		"infra_scpsys",
+		"scp_sel",
+		"aud_intbus_sel",
+		"audio_sel",
+		"msdc50_3_sel",
+		"msdc30_0_sel",
+		"ddrphycfg_sel",
+		"mem_sel",
+		"msdcpll_d2",
 	};
 
 	*num = ARRAY_SIZE(clks);

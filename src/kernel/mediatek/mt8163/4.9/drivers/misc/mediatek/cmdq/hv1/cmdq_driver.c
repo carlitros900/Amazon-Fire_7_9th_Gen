@@ -555,16 +555,16 @@ static long cmdq_driver_process_command_request(
 
 static long cmdq_verify_command(struct cmdqCommandStruct *command)
 {
-	if (command->blockSize <= 0
-	   || (command->blockSize > CMDQ_MAX_COMMAND_SIZE)
-	   || (command->blockSize % 8 != 0)
-	   ) {
+	if (command->blockSize < (2 * CMDQ_INST_SIZE) ||
+		(command->blockSize > CMDQ_MAX_COMMAND_SIZE) ||
+		command->blockSize % 8 != 0) {
+		/* for userspace command: must ends with EOC+JMP. */
 		CMDQ_ERR("Command block size invalid! size:%d\n",
 			command->blockSize);
 		return -EFAULT;
 	}
 
-    return 0;
+	return 0;
 }
 
 static long cmdq_ioctl(struct file *pFile,
@@ -1219,7 +1219,7 @@ static int cmdq_probe(struct platform_device *pDevice)
 	/* ioctl access point (/dev/mtk_cmdq) */
 	gCmdqCDev = cdev_alloc();
 	gCmdqCDev->owner = THIS_MODULE;
-	gCmdqCDev->ops = &cmdqOP;
+	gCmdqCDev->ops = NULL;
 
 	status = cdev_add(gCmdqCDev, gCmdqDevNo, 1);
 

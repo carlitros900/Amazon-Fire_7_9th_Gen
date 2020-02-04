@@ -1098,7 +1098,7 @@ struct ion_heap *ion_mm_heap_create(struct ion_platform_heap *unused)
 	}
 
 	heap->heap.debug_show = ion_mm_heap_debug_show;
-	ion_comm_init();
+
 	return &heap->heap;
 
 err_create_pool:

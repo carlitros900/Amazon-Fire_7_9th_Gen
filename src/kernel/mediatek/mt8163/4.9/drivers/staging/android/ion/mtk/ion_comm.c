@@ -43,14 +43,15 @@ static int ion_comm_cache_pool(void *data)
 	int cache_buffer = 0;
 	unsigned int gfp_flags = __GFP_HIGHMEM | __GFP_MOVABLE;
 	struct ion_buffer *buffer = NULL;
-	struct ion_heap *ion_cam_heap;
+	struct ion_heap *ion_cam_heap = NULL;
 
 	ion_cam_heap = ion_drv_get_heap(g_ion_device,
 					ION_HEAP_TYPE_MULTIMEDIA_FOR_CAMERA,
 					1);
+
 	while (1) {
 		if (kthread_should_stop()) {
-			IONMSG("stop ion history threak\n");
+			IONMSG("stop ion history thread\n");
 			break;
 		}
 

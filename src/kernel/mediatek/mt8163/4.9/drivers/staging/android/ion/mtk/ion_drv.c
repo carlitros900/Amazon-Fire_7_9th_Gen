@@ -821,6 +821,9 @@ static int ion_drv_probe(struct platform_device *pdev)
 			continue;
 
 		ion_device_add_heap(g_ion_device, heap);
+
+		if (heap_data->id == ION_HEAP_TYPE_MULTIMEDIA_FOR_CAMERA)
+			ion_comm_init();
 	}
 
 	platform_set_drvdata(pdev, g_ion_device);

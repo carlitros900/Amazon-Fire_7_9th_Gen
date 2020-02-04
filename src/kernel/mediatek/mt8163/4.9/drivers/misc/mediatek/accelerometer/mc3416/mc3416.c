@@ -2317,6 +2317,7 @@ static int mc34xx_suspend(struct device *dev)
 	mc34xx_mutex_unlock();
 	if (err)
 	{
+		atomic_set(&obj->suspend, 0);
 		GSE_ERR("write power control fail!!\n");
 		return err;
 	}
@@ -2375,6 +2376,7 @@ static int mc34xx_suspend(struct i2c_client *client, pm_message_t msg)
 		mc34xx_mutex_unlock();
 		if (err)
 		{
+			atomic_set(&obj->suspend, 0);
 			GSE_ERR("write power control fail!!\n");
 			return err;
 		}

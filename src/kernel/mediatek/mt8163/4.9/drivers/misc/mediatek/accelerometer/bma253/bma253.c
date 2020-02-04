@@ -2127,6 +2127,7 @@ static int bma250_i2c_suspend(struct device *dev)
 	mutex_unlock(&gsensor_mutex);
 	if (err)
 	{
+		atomic_set(&obj->suspend, 0);
 		GSE_ERR("write power control fail!!\n");
 		return err;
 	}

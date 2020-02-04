@@ -2235,6 +2235,24 @@ static int musb_gadget_vbus_draw(struct usb_gadget *gadget, unsigned int mA)
 	return usb_phy_set_power(musb->xceiv, mA);
 }
 
+/* default value 0 */
+static int usb_rdy;
+void set_usb_rdy(void)
+{
+	DBG(0, "set usb_rdy, wake up bat\n");
+	usb_rdy = 1;
+#ifdef CONFIG_MTK_SMART_BATTERY
+	wake_up_bat();
+#endif
+}
+bool is_usb_rdy(void)
+{
+	if (usb_rdy)
+		return true;
+	else
+		return false;
+}
+
 int first_connect = 1;
 int check_delay_done = 1;
 static int musb_gadget_pullup(struct usb_gadget *gadget, int is_on)
@@ -2257,8 +2275,10 @@ static int musb_gadget_pullup(struct usb_gadget *gadget, int is_on)
 	 */
 
 	DBG(0, "is_on=%d, softconnect=%d ++\n", is_on, musb->softconnect);
-	if (!musb->is_ready && is_on)
+	if (!musb->is_ready && is_on) {
 		musb->is_ready = true;
+		set_usb_rdy();
+	}
 
 	/* be aware this could not be used in non-sleep context */
 	usb_in = usb_cable_connected();

@@ -676,5 +676,6 @@ static inline const char *otg_state_string(enum usb_otg_state state)
 }
 #endif
 
+extern void wake_up_bat(void);
 extern void register_usb_hal_disconnect_check(void (*function) (void));
 #endif				/* __MUSB_CORE_H__ */

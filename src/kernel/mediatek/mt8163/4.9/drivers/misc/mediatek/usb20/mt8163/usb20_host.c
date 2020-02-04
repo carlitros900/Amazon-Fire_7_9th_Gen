@@ -679,6 +679,9 @@ static void musb_id_pin_work(struct work_struct *data)
 		    USBPHY_READ8(0x6d), USBPHY_READ8(0x6c));
 #endif
 
+#ifdef OTG_WITHOUT_VBUS_CHECK
+		mtk_musb->xceiv->state = OTG_STATE_A_HOST;
+#endif
 		musb_start(mtk_musb);
 		MUSB_HST_MODE(mtk_musb);
 		switch_int_to_device(mtk_musb);

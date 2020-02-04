@@ -5,7 +5,7 @@
 #define NUM_CHANNELS 1
 
 #define NUM_LED_COLORS 1
-#define NUM_LED_CALIB_PARAMS 3
+#define NUM_LED_CALIB_PARAMS 4
 
 #define LED_PWM_MAX_SCALING 0x7F
 #define BYTEMASK 0xFF
@@ -14,6 +14,7 @@
 #define INDEX_LEDCALIBENABLE 0
 #define INDEX_PWMSCALING 1
 #define INDEX_PWMMAXLIMIT 2
+#define INDEX_INTERCEPT 3     /*intercept+127 value*/
 
 #define BRIGHTNESS_LEVEL_MAX 255
 #define PWM_DUTY_CYCLE_MAX 40000
@@ -26,6 +27,7 @@ struct led_mutebutton {
 	int ledparams;
 	int ledpwmscaling;
 	int ledpwmmaxlimiter;
+	int intercept;
 };
 
 struct led_mutebutton_data {
@@ -35,9 +37,13 @@ struct led_mutebutton_data {
 	uint8_t			state[NUM_CHANNELS];
 	uint8_t			ledpwmmaxlimiterrgb[NUM_LED_COLORS];
 	uint8_t			ledpwmscalingrgb[NUM_LED_COLORS];
+	uint8_t			led_intercept[NUM_LED_COLORS];
+
+	int			intercept;
 	int			ledparams;
 	int			ledpwmscaling;
 	int			ledpwmmaxlimiter;
+	int			is_two_point_cal_enabled;
 };
 
 struct led_mutebutton_priv {
@@ -48,6 +54,7 @@ struct led_mutebutton_priv {
 extern unsigned int idme_get_ledparams_value(void);
 extern unsigned int idme_get_ledcal_value(void);
 extern unsigned int idme_get_ledpwmmaxlimit_value(void);
+extern unsigned int idme_get_intercept_value(void);
 #endif
 
 

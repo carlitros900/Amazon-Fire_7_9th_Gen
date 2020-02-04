@@ -852,6 +852,11 @@ config ONETIME_METRIC
        help
          This option enables the kernel to upload metrics on bootup just once
 
+config PWM_INVERTED
+       bool "PWM duty cycle and calibration parameter is inverted"
+       help
+         This option should be used if PWM and scaling factor are not directly proportional
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

@@ -70,7 +70,7 @@ struct mtk_com_pwm {
 	struct clk *clk_top;
 	const struct mtk_com_pwm_data *data;
 #ifdef CONFIG_PWM_MUTEBUTTON
-	struct led_mutebutton_priv* led_priv;
+	struct led_mutebutton_priv *led_priv;
 #endif
 };
 
@@ -175,7 +175,8 @@ static inline void mtk_pwm_writel(struct mtk_com_pwm *pwm,
 				u32 pwm_no, unsigned long offset,
 				unsigned long val)
 {
-	void __iomem *reg = pwm->base + pwm->data->pwm_register[pwm_no] + offset;
+	void __iomem *reg = pwm->base +
+				pwm->data->pwm_register[pwm_no] + offset;
 
 	writel(val, reg);
 }
@@ -184,7 +185,8 @@ static inline u32 mtk_pwm_readl(struct mtk_com_pwm *pwm,
 				u32 pwm_no, unsigned long offset)
 {
 	u32 value;
-	void __iomem *reg = pwm->base + pwm->data->pwm_register[pwm_no] + offset;
+	void __iomem *reg = pwm->base +
+				pwm->data->pwm_register[pwm_no] + offset;
 
 	value = readl(reg);
 	return value;
@@ -205,17 +207,19 @@ static int mtk_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 #ifdef CONFIG_PWM_MUTEBUTTON
 	int i, scaledvalue;
 
-	struct led_mutebutton_priv* led_priv = mt_pwm->led_priv;
-	struct led_mutebutton_data *led_data = ((led_priv) ? ( (led_priv->leds) ? &led_priv->leds[0] : NULL ) : NULL );
+	struct led_mutebutton_priv *led_priv = mt_pwm->led_priv;
+	struct led_mutebutton_data *led_data = ((led_priv) ?
+			((led_priv->leds) ? &led_priv->leds[0] : NULL) : NULL);
 
-	pr_debug("mute button: input duty_ns : %d\n",duty_ns);
-	pr_debug("mute button: input period_ns : %d\n",period_ns);
+	pr_debug("mute button: input duty_ns : %d\n", duty_ns);
+	pr_debug("mute button: input period_ns : %d\n", period_ns);
 #endif
 	mtk_pwm_clk_enable(chip, pwm);
 
 	clksrc_rate = clk_get_rate(mt_pwm->clks[pwm->hwpwm]);
 	if (clksrc_rate == 0) {
-		PWM_ERR(mt_pwm->dev, "clksrc_rate %d is invalid\n", clksrc_rate);
+		PWM_ERR(mt_pwm->dev, "clksrc_rate %d is invalid\n",
+						clksrc_rate);
 		return -EINVAL;
 	}
 	resolution = 1000000000/clksrc_rate;
@@ -225,38 +229,84 @@ static int mtk_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 		mutex_lock(&led_data->lock);
 		for (i = 0; i < NUM_CHANNELS; i++) {
 			if (led_data->ledparams) {
-				pr_debug("mute button: Enable Mute LED Brightness Calibration\n");
-				mutebutton_convert_to_rgb(led_data->ledpwmscalingrgb, ledcalibparams[INDEX_PWMSCALING]);
-				mutebutton_convert_to_rgb(led_data->ledpwmmaxlimiterrgb, ledcalibparams[INDEX_PWMMAXLIMIT]);
-				pr_debug("mute button: pwmscalingrgb: %x\n", (int)led_data->ledpwmscalingrgb[i%NUM_LED_COLORS]);
-				pr_debug("mute button: pwmmaxlimiterrgb: %x\n", led_data->ledpwmmaxlimiterrgb[i%NUM_LED_COLORS]);
-				scaledvalue = ((int)duty_ns *
-					       (int)led_data->ledpwmscalingrgb[i %
-						NUM_LED_COLORS])
+				pr_debug("mute button:\n"
+				"Enable Mute LED Brightness Calibration\n");
+				mutebutton_convert_to_rgb(
+						led_data->ledpwmscalingrgb,
+						ledcalibparams[INDEX_PWMSCALING]);
+				/*
+				 * The following equation is calculated as follows
+				 * Intensity = I; Original PWM = P; Scaled PWM = P'
+				 * Mcal,Ccal is slope and Intercept provided in idme
+				 * I vs P equation I = M*P + C is the target
+				 * I = M'*P' + C' is device I vs PWM curve
+				 * For given I => M'*P' + C' = M*P + C
+				 * P' = (M/M')*P + (C-C')/M'
+				 * Mcal = (M/M') * 127; Ccal = (C-C')/M' + 127
+				 * Since P vs I curve is inverse, P is replaced
+				 * by 255-P and P'=255-P'
+				 */
+				duty_ns = BRIGHTNESS_LEVEL_MAX - duty_ns;
+				if (led_data->is_two_point_cal_enabled) {
+					mutebutton_convert_to_rgb(
+						led_data->led_intercept,
+						ledcalibparams[INDEX_INTERCEPT]);
+					scaledvalue = ((int)duty_ns *
+						(int)led_data->ledpwmscalingrgb
+						[i%NUM_LED_COLORS]/
+						LED_PWM_MAX_SCALING) +
+						(int)((int)led_data->
+						led_intercept[i%NUM_LED_COLORS]
+						- LED_PWM_MAX_SCALING);
+
+					pr_debug("mute button: led_intercept:\n"
+						"%x\n",
+						(int)led_data->
+						led_intercept[i%NUM_LED_COLORS]);
+				} else {
+					scaledvalue = ((int)duty_ns *
+					       (int)led_data->ledpwmscalingrgb[i
+						% NUM_LED_COLORS])
 						/ LED_PWM_MAX_SCALING;
-				pr_debug("mute button: scaledvalue: %d\n",scaledvalue);
-				led_data->state[i] =
-					min(scaledvalue,
+				}
+				scaledvalue = BRIGHTNESS_LEVEL_MAX -
+								scaledvalue;
+
+				mutebutton_convert_to_rgb(
+					led_data->ledpwmmaxlimiterrgb,
+					ledcalibparams[INDEX_PWMMAXLIMIT]);
+				pr_debug("mute button: pwmscalingrgb: %x\n",
+				(int)led_data->ledpwmscalingrgb[i%NUM_LED_COLORS]);
+				pr_debug("mute button: pwmmaxlimiterrgb: %x\n",
+				led_data->ledpwmmaxlimiterrgb[i%NUM_LED_COLORS]);
+				pr_debug("mute button: scaledvalue: %d\n",
+								scaledvalue);
+				led_data->state[i] = max(0, min(scaledvalue,
 					(int) led_data->ledpwmmaxlimiterrgb[i %
-					NUM_LED_COLORS]);
+					NUM_LED_COLORS]));
 				duty_ns = led_data->state[i];
-				pr_debug("mute button: state[%d]: %d\n",i, led_data->state[i]);
+				pr_debug("mute button: state[%d]:\n"
+					"%d\n", i, led_data->state[i]);
 			} else {
-				pr_debug("mute button: Disable Mute LED Brightness Calibration\n");
+				pr_debug("mute button:\n"
+				"Disable Mute LED Brightness Calibration\n");
 				led_data->state[i] = duty_ns;
 			}
 		}
 		mutex_unlock(&led_data->lock);
 	}
 
-	pr_debug("mute button: duty_ns : %d\n",duty_ns);
-	pr_debug("mute button: period_ns : %d\n",period_ns);
+	pr_debug("mute button: duty_ns : %d\n", duty_ns);
+	pr_debug("mute button: period_ns : %d\n", period_ns);
+
 	duty_ns *=  PWM_DUTY_CYCLE_MAX;
 	duty_ns /= BRIGHTNESS_LEVEL_MAX;
 	period_ns *= PWM_PERIOD_MAX;
 	period_ns /= BRIGHTNESS_LEVEL_MAX;
-	pr_debug("mute button: duty_ns * max duty cycle(40000) / max brightness level(255) : %d\n",duty_ns);
-	pr_debug("mute button: period_ns * max period(40000) / max brightness level(255) : %d\n",period_ns);
+	pr_debug("mute button: duty_ns * max duty cycle(40000) /\n"
+				"max brightness level(255) : %d\n", duty_ns);
+	pr_debug("mute button: period_ns * max period(40000) /\n"
+				"max brightness level(255) : %d\n", period_ns);
 #endif
 
 	while (period_ns / resolution  > 8191) {
@@ -321,19 +371,23 @@ static ssize_t ledcalibparams_store(struct device *dev,
 	int temp;
 	struct mtk_com_pwm *mt_pwm = dev_get_drvdata(dev);
 	struct led_mutebutton_priv *led_priv = mt_pwm->led_priv;
-	struct led_mutebutton_data *led_data = ((led_priv) ? ( (led_priv->leds) ? &led_priv->leds[0] : NULL ) : NULL );
-	struct pwm_device *pwm = (mt_pwm->chip.pwms) ? &mt_pwm->chip.pwms[0] : NULL;
+	struct led_mutebutton_data *led_data = ((led_priv) ?
+			((led_priv->leds) ? &led_priv->leds[0] : NULL) : NULL);
+	struct pwm_device *pwm = (mt_pwm->chip.pwms) ?
+						&mt_pwm->chip.pwms[0] : NULL;
 	unsigned int duty_cycle = (pwm) ? pwm_get_duty_cycle(pwm) : 0;
 	unsigned int period = (pwm) ? pwm_get_period(pwm) : 0;
 
 	if (!led_data) {
-		pr_debug("mute button: led_data return NULL at %s:%d\n", __func__, __LINE__);
+		pr_err("mute button: led_data return NULL at %s:%d\n",
+							__func__, __LINE__);
 		return 0;
 	}
 
 	ret = kstrtoint(buf, 10, &temp);
 	if (ret) {
-		pr_debug("mute button: kstrtoint return NULL at %s:%d\n", __func__, __LINE__);
+		pr_err("mute button: kstrtoint return NULL at %s:%d\n",
+							__func__, __LINE__);
 		return ret;
 	}
 
@@ -351,11 +405,13 @@ static ssize_t ledcalibparams_show(struct device *dev,
 {
 	struct mtk_com_pwm *mt_pwm = dev_get_drvdata(dev);
 	struct led_mutebutton_priv *led_priv = mt_pwm->led_priv;
-	struct led_mutebutton_data *led_data = ((led_priv) ? ( (led_priv->leds) ? &led_priv->leds[0] : NULL ) : NULL );
+	struct led_mutebutton_data *led_data = ((led_priv) ?
+			((led_priv->leds) ? &led_priv->leds[0] : NULL) : NULL);
 	int ret;
 
 	if (!led_data) {
-		pr_debug("mute button: led_data return NULL at %s:%d\n", __func__, __LINE__);
+		pr_err("mute button: led_data return NULL at %s:%d\n",
+							__func__, __LINE__);
 		return 0;
 	}
 
@@ -364,7 +420,8 @@ static ssize_t ledcalibparams_show(struct device *dev,
 	mutex_unlock(&led_data->lock);
 
 	if (ret) {
-		pr_debug("mute button: sprintf return %d at %s:%d\n", ret, __func__, __LINE__);
+		pr_err("mute button: sprintf return %d at %s:%d\n",
+						ret, __func__, __LINE__);
 		return ret;
 	}
 
@@ -378,34 +435,56 @@ static ssize_t ledpwmscaling_store(struct device *dev,
 				   const char *buf, size_t len)
 {
 	int ret;
-	int temp;
+	unsigned int temp;
 	struct mtk_com_pwm *mt_pwm = dev_get_drvdata(dev);
 	struct led_mutebutton_priv *led_priv = mt_pwm->led_priv;
-	struct led_mutebutton_data *led_data = ((led_priv) ? ( (led_priv->leds) ? &led_priv->leds[0] : NULL ) : NULL );
-	struct pwm_device *pwm = (mt_pwm->chip.pwms) ? &mt_pwm->chip.pwms[0] : NULL;
+	struct led_mutebutton_data *led_data = ((led_priv) ?
+			((led_priv->leds) ? &led_priv->leds[0] : NULL) : NULL);
+	struct pwm_device *pwm = (mt_pwm->chip.pwms) ?
+					&mt_pwm->chip.pwms[0] : NULL;
 	unsigned int duty_cycle = (pwm) ? pwm_get_duty_cycle(pwm) : 0;
 	unsigned int period = (pwm) ? pwm_get_period(pwm) : 0;
 
 	if (!led_data) {
-		pr_debug("mute button: led_data return NULL at %s:%d\n", __func__, __LINE__);
+		pr_err("mute button: led_data return NULL at %s:%d\n",
+							__func__, __LINE__);
 		return 0;
 	}
 
-	ret = kstrtoint(buf, 16, &temp);
+	ret = kstrtouint(buf, 16, &temp);
 	if (ret) {
-		pr_debug("mute button: kstrtoint return %d at %s:%d\n", ret, __func__, __LINE__);
+		pr_err("mute button: kstrtoint return %d at %s:%d\n",
+						ret, __func__, __LINE__);
 		return ret;
 	}
 
 	mutex_lock(&led_data->lock);
-	led_data->ledpwmscaling = temp;
-	ledcalibparams[INDEX_PWMSCALING] = temp;
-	mutebutton_convert_to_rgb(led_data->ledpwmscalingrgb, temp);
-	mutex_unlock(&led_data->lock);
-	pr_debug("mute button: ledpwmscaling %x\n",led_data->ledpwmscaling);
-	pr_debug("mute button: ledpwmscalingrgb %x\n",led_data->ledpwmscalingrgb[0]);
-	pr_debug("mute button: ledcalibparams[INDEX_PWMSCALING]%x\n",ledcalibparams[INDEX_PWMSCALING]);
+#ifdef CONFIG_PWM_INVERTED
+	if (led_data->is_two_point_cal_enabled) {
+		pr_debug("mute button: temp value =  %x\n", temp);
+		ledcalibparams[INDEX_PWMSCALING] =
+						(temp & (BYTEMASK << 24)) >> 8;
+		ledcalibparams[INDEX_INTERCEPT] = (temp & (BYTEMASK << 16));
 
+		led_data->ledpwmscaling = ledcalibparams[INDEX_PWMSCALING];
+		led_data->intercept = ledcalibparams[INDEX_INTERCEPT];
+		pr_debug("mute button: ledcalibparams[INDEX_PWMSCALING]%x\n",
+					ledcalibparams[INDEX_PWMSCALING]);
+		pr_debug("mute button: ledcalibparams[INDEX_INTERCEPT] = %x\n",
+					ledcalibparams[INDEX_INTERCEPT]);
+	} else {
+		led_data->ledpwmscaling = temp;
+		ledcalibparams[INDEX_PWMSCALING] = temp;
+		mutebutton_convert_to_rgb(led_data->ledpwmscalingrgb, temp);
+		pr_debug("mute button: ledpwmscaling %x\n",
+						led_data->ledpwmscaling);
+		pr_debug("mute button: ledpwmscalingrgb %x\n",
+						led_data->ledpwmscalingrgb[0]);
+		pr_debug("mute button: ledcalibparams[INDEX_PWMSCALING]%x\n",
+					ledcalibparams[INDEX_PWMSCALING]);
+	}
+#endif
+	mutex_unlock(&led_data->lock);
 	mtk_pwm_config(&mt_pwm->chip, mt_pwm->chip.pwms, duty_cycle, period);
 
 	return len;
@@ -417,17 +496,32 @@ static ssize_t ledpwmscaling_show(struct device *dev,
 	int ret;
 	struct mtk_com_pwm *mt_pwm = dev_get_drvdata(dev);
 	struct led_mutebutton_priv *led_priv = mt_pwm->led_priv;
-	struct led_mutebutton_data *led_data = ((led_priv) ? ( (led_priv->leds) ? &led_priv->leds[0] : NULL ) : NULL );
+	struct led_mutebutton_data *led_data = ((led_priv) ?
+			((led_priv->leds) ? &led_priv->leds[0] : NULL) : NULL);
 
 	if (!led_data) {
-		pr_debug("mute button: led_data return NULL at %s:%d\n", __func__, __LINE__);
+		pr_err("mute button: led_data return NULL at %s:%d\n",
+							__func__, __LINE__);
 		return 0;
 	}
 
 	mutex_lock(&led_data->lock);
+#ifdef CONFIG_PWM_INVERTED
+	if (led_data->is_two_point_cal_enabled) {
+		ret = sprintf(buf, "ledpwmscaling=0x%x, Intercept=0x%x\n",
+				led_data->ledpwmscaling, led_data->intercept);
+	} else {
+		pr_debug("mute button: ledpwmscaling_inverted = %x\n",
+						led_data->ledpwmscaling);
+		ret = sprintf(buf, "%x\n",
+		(2 * LED_PWM_MAX_SCALING - (led_data->ledpwmscaling >> 16))
+			<< 16);
+	}
+#else
 	ret = sprintf(buf, "%x\n", led_data->ledpwmscaling);
+#endif
 	mutex_unlock(&led_data->lock);
-	pr_debug("mute button: ledpwmscaling %x\n",led_data->ledpwmscaling);
+	pr_debug("mute button: ledpwmscaling %x\n", led_data->ledpwmscaling);
 
 	return ret;
 }
@@ -443,19 +537,23 @@ static ssize_t ledpwmmaxlimit_store(struct device *dev,
 
 	struct mtk_com_pwm *mt_pwm = dev_get_drvdata(dev);
 	struct led_mutebutton_priv *led_priv = mt_pwm->led_priv;
-	struct led_mutebutton_data *led_data = ((led_priv) ? ( (led_priv->leds) ? &led_priv->leds[0] : NULL ) : NULL );
-	struct pwm_device *pwm = (mt_pwm->chip.pwms) ? &mt_pwm->chip.pwms[0] : NULL;
+	struct led_mutebutton_data *led_data = ((led_priv) ? ((led_priv->leds) ?
+					&led_priv->leds[0] : NULL) : NULL);
+	struct pwm_device *pwm = (mt_pwm->chip.pwms) ?
+					&mt_pwm->chip.pwms[0] : NULL;
 	unsigned int duty_cycle = (pwm) ? pwm_get_duty_cycle(pwm) : 0;
 	unsigned int period = (pwm) ? pwm_get_period(pwm) : 0;
 
 	if (!led_data) {
-		pr_debug("mute button: led_data return NULL at %s:%d\n", __func__, __LINE__);
+		pr_err("mute button: led_data return NULL at %s:%d\n",
+							__func__, __LINE__);
 		return 0;
 	}
 
 	ret = kstrtoint(buf, 16, &temp);
 	if (ret) {
-		pr_debug("mute button: kstrtoint return %d at %s:%d\n", ret, __func__, __LINE__);
+		pr_err("mute button: kstrtoint return %d at %s:%d\n",
+						ret, __func__, __LINE__);
 		return ret;
 	}
 
@@ -464,9 +562,12 @@ static ssize_t ledpwmmaxlimit_store(struct device *dev,
 	mutebutton_convert_to_rgb(led_data->ledpwmmaxlimiterrgb, temp);
 	ledcalibparams[INDEX_PWMMAXLIMIT] = temp;
 	mutex_unlock(&led_data->lock);
-	pr_debug("mute button: ledpwmmaxlimiter %x\n",led_data->ledpwmmaxlimiter);
-	pr_debug("mute button: ledpwmmaxlimiterrgb %x\n",led_data->ledpwmmaxlimiterrgb[0]);
-	pr_debug("mute button: ledcalibparams[INDEX_PWMMAXLIMIT]%x\n", ledcalibparams[INDEX_PWMMAXLIMIT]);
+	pr_debug("mute button: ledpwmmaxlimiter %x\n",
+					led_data->ledpwmmaxlimiter);
+	pr_debug("mute button: ledpwmmaxlimiterrgb %x\n",
+					led_data->ledpwmmaxlimiterrgb[0]);
+	pr_debug("mute button: ledcalibparams[INDEX_PWMMAXLIMIT]%x\n",
+					ledcalibparams[INDEX_PWMMAXLIMIT]);
 
 	mtk_pwm_config(&mt_pwm->chip, mt_pwm->chip.pwms, duty_cycle, period);
 
@@ -478,19 +579,22 @@ static ssize_t ledpwmmaxlimit_show(struct device *dev,
 {
 	struct mtk_com_pwm *mt_pwm = dev_get_drvdata(dev);
 	struct led_mutebutton_priv *led_priv = mt_pwm->led_priv;
-	struct led_mutebutton_data *led_data = ((led_priv) ? ( (led_priv->leds) ? &led_priv->leds[0] : NULL ) : NULL );
+	struct led_mutebutton_data *led_data = ((led_priv) ?
+			((led_priv->leds) ? &led_priv->leds[0] : NULL) : NULL);
 
 	int ret;
 
 	if (!led_data) {
-		pr_debug("mute button: led_data return NULL at %s:%d\n", __func__, __LINE__);
+		pr_err("mute button: led_data return NULL at\n"
+						"%s:%d\n", __func__, __LINE__);
 		return 0;
 	}
 
 	mutex_lock(&led_data->lock);
 	ret = sprintf(buf, "%x\n", led_data->ledpwmmaxlimiter);
 	mutex_unlock(&led_data->lock);
-	pr_debug("mute button: ledpwmmaxlimiter %x",led_data->ledpwmmaxlimiter);
+	pr_debug("mute button: ledpwmmaxlimiter %x",
+						led_data->ledpwmmaxlimiter);
 
 	return ret;
 }
@@ -505,8 +609,10 @@ static void mtk_pwm_dbg_show(struct pwm_chip *chip, struct seq_file *s)
 	u32 value;
 	int i;
 
-	seq_printf(s, "enable[0x%x]:0x%x, clk(top:%d) prepared:%d, enabled:%u, clk(main:%d) prepared:%d, enabled:%u\n",
-			PWM_EN_REG, readl(mt_pwm->base + PWM_EN_REG), !mt_pwm->data->no_top_clk,
+	seq_printf(s, "enable[0x%x]:0x%x, clk(top:%d) prepared:%d,\n"
+			"enabled:%u,clk(main:%d) prepared:%d, enabled:%u\n",
+			PWM_EN_REG, readl(mt_pwm->base + PWM_EN_REG),
+					!mt_pwm->data->no_top_clk,
 			mtk_pwm_is_clk_prepared(mt_pwm->clk_top),
 			mtk_pwm_is_clk_enabled(mt_pwm->clk_top),
 			!mt_pwm->data->no_main_clk,
@@ -520,7 +626,8 @@ static void mtk_pwm_dbg_show(struct pwm_chip *chip, struct seq_file *s)
 			(readl(mt_pwm->base + PWM_EN_REG) & (1 << i)) ? 1 : 0,
 			mtk_pwm_is_clk_prepared(mt_pwm->clks[i]),
 			mtk_pwm_is_clk_enabled(mt_pwm->clks[i]));
-		seq_printf(s, "\tPWM_CON:0x%x, PWM_DWIDTH:0x%x, PWM_THRESH:0x%x, PWM_CONTINUOUS:%d\n",
+		seq_printf(s, "\tPWM_CON:0x%x, PWM_DWIDTH:0x%x,\n"
+			"PWM_THRESH:0x%x, PWM_CONTINUOUS:%d\n",
 			mtk_pwm_readl(mt_pwm, i, PWMCON),
 			mtk_pwm_readl(mt_pwm, i, PWMDWIDTH),
 			mtk_pwm_readl(mt_pwm, i, PWMTHRES),
@@ -542,16 +649,19 @@ static const struct pwm_ops mtk_pwm_ops = {
 #ifdef CONFIG_PWM_MUTEBUTTON
 static size_t sizeof_mutebutton_leds_priv(int num_leds)
 {
-	size_t size =0;
+	size_t size = 0;
 
 	size = sizeof(struct led_mutebutton_priv);
-	size += (sizeof(struct led_mutebutton_data) + sizeof(uint8_t)*NUM_CHANNELS + sizeof(uint8_t)*NUM_LED_COLORS + sizeof(uint8_t)*NUM_LED_COLORS) * num_leds;
+	size += (sizeof(struct led_mutebutton_data) + sizeof(uint8_t)*
+				NUM_CHANNELS + sizeof(uint8_t)*NUM_LED_COLORS +
+				sizeof(uint8_t)*NUM_LED_COLORS) * num_leds;
 
 	return size;
 }
 
-static int led_mutebutton_add(struct device *dev, struct led_mutebutton_priv *priv,
-		       struct led_mutebutton *led)
+static int led_mutebutton_add(struct device *dev,
+			struct led_mutebutton_priv *priv,
+			struct led_mutebutton *led)
 {
 	struct led_mutebutton_data *led_data = &priv->leds[priv->num_leds];
 	int ret = 0;
@@ -559,39 +669,95 @@ static int led_mutebutton_add(struct device *dev, struct led_mutebutton_priv *pr
 	led_data->ledparams = led->ledparams;
 	led_data->ledpwmscaling = led->ledpwmscaling;
 	led_data->ledpwmmaxlimiter = led->ledpwmmaxlimiter;
+	if (led_data->is_two_point_cal_enabled)
+		led_data->intercept = led->intercept;
+
 	priv->num_leds++;
 
 	return ret;
 }
 
-static int led_mutebutton_create_of(struct device *dev, struct led_mutebutton_priv *priv)
+static int led_mutebutton_create_of(struct device *dev,
+					struct led_mutebutton_priv *priv)
 {
 	struct led_mutebutton led;
+	struct led_mutebutton_data *led_data = ((priv) ?
+				((priv->leds) ? &priv->leds[0] : NULL) : NULL);
 	int ret = 0;
 	int ledparams = 0;
+
+	if (!led_data) {
+		pr_err("Error occured when accessing\n"
+				"led_data which is NULL %s\n", __func__);
+		return 0;
+	}
 
 	memset(&led, 0, sizeof(led));
 
 	ledparams = idme_get_ledparams_value();
 	if (ledparams) {
 		ledcalibparams[INDEX_LEDCALIBENABLE] = ledparams;
-		ledcalibparams[INDEX_PWMSCALING] = idme_get_ledcal_value() << 16;
-		ledcalibparams[INDEX_PWMMAXLIMIT] = idme_get_ledpwmmaxlimit_value() << 16;
-
+		ledcalibparams[INDEX_PWMSCALING] =
+						idme_get_ledcal_value() << 16;
+		ledcalibparams[INDEX_PWMMAXLIMIT] =
+					idme_get_ledpwmmaxlimit_value() << 16;
 		led.ledparams = ledcalibparams[INDEX_LEDCALIBENABLE];
 		led.ledpwmscaling = ledcalibparams[INDEX_PWMSCALING];
 		led.ledpwmmaxlimiter = ledcalibparams[INDEX_PWMMAXLIMIT];
-		pr_debug("mute button: Enable ledparams, ledpwmscaling %d, ledpwmmaxlimiter %d\n", led.ledpwmscaling, led.ledpwmmaxlimiter);
+		pr_info("mute button: Enable ledparams, ledpwmscaling %d,\n"
+				"ledpwmmaxlimiter %d\n", led.ledpwmscaling,
+					led.ledpwmmaxlimiter);
+		if (led_data->is_two_point_cal_enabled) {
+			ledcalibparams[INDEX_INTERCEPT] =
+					idme_get_intercept_value() << 16;
+			led.intercept = ledcalibparams[INDEX_INTERCEPT];
+			pr_info("mute button:ledcalibparams[INDEX_INTERCEPT]=\n"
+				"0x%x\n", ledcalibparams[INDEX_INTERCEPT]);
+		}
 	} else {
 		led.ledparams = 0;
 		led.ledpwmscaling = LED_PWM_SCALING_DEFAULT;
 		led.ledpwmmaxlimiter = LED_PWM_MAX_LIMIT_DEFAULT;
-		pr_debug("mute button: Disable ledparams, ledpwmscaling %d, ledpwmmaxlimiter %d\n", led.ledpwmscaling, led.ledpwmmaxlimiter);
+		if (led_data->is_two_point_cal_enabled)
+			led.intercept = LED_PWM_SCALING_DEFAULT;
+		pr_debug("mute button: Disable ledparams, ledpwmscaling %d,\n"
+				"ledpwmmaxlimiter %d\n", led.ledpwmscaling,
+							led.ledpwmmaxlimiter);
 	}
 
 	ret = led_mutebutton_add(dev, priv, &led);
 
 	return ret;
+}
+
+static void get_pwm_dts_props(const char *name,
+				struct led_mutebutton_data *led_data)
+{
+	struct device_node *node;
+	int ret;
+
+	u32 is_two_point_cal[] = {0};
+
+	node = of_find_compatible_node(NULL, NULL, name);
+
+	if (led_data)
+		led_data->is_two_point_cal_enabled = 0;
+	else
+		pr_err("%s Received led_data as NULL\n", __func__);
+
+	if (node) {
+		ret = of_property_read_u32_array(node,
+				"is_two_point_cal_enabled", is_two_point_cal,
+						ARRAY_SIZE(is_two_point_cal));
+		if (ret) {
+			pr_err("%s Device tree: cannot find 2 point cal\n"
+							"property\n", __func__);
+			led_data->is_two_point_cal_enabled = 0;
+		} else {
+			led_data->is_two_point_cal_enabled = 1;
+			pr_info("%s 2 point calibration enabled\n", __func__);
+		}
+	}
 }
 #endif
 
@@ -602,7 +768,6 @@ static int mtk_pwm_probe(struct platform_device *pdev)
 	struct resource *res;
 	int ret;
 	int i;
-
 #ifdef CONFIG_PWM_MUTEBUTTON
 	struct led_mutebutton_data *led_data;
 	int count = 1;
@@ -622,23 +787,29 @@ static int mtk_pwm_probe(struct platform_device *pdev)
 	mt_pwm->dev = &pdev->dev;
 
 #ifdef CONFIG_PWM_MUTEBUTTON
-	mt_pwm->led_priv = devm_kzalloc(&pdev->dev, sizeof_mutebutton_leds_priv(count),GFP_KERNEL);
+	mt_pwm->led_priv = devm_kzalloc(&pdev->dev,
+				sizeof_mutebutton_leds_priv(count), GFP_KERNEL);
 
 	if (mt_pwm->led_priv) {
 		led_data = devm_kzalloc(&pdev->dev,
-						(sizeof(struct led_mutebutton_data) + sizeof(uint8_t)*NUM_CHANNELS + sizeof(uint8_t)*NUM_LED_COLORS + sizeof(uint8_t)*NUM_LED_COLORS) * count,
+				(sizeof(struct led_mutebutton_data) +
+				sizeof(uint8_t)*NUM_CHANNELS +
+				sizeof(uint8_t)*NUM_LED_COLORS +
+				sizeof(uint8_t)*NUM_LED_COLORS) * count,
 						GFP_KERNEL);
 		if (led_data) {
 			led_data = &mt_pwm->led_priv->leds[0];
 			mutex_init(&led_data->lock);
+			get_pwm_dts_props("mediatek,pwm", led_data);
 		} else {
-			pr_debug("mute button: led_mutebutton_data is NULL (%s:%d)\n",__func__,__LINE__);
+			pr_debug("mute button: led_mutebutton_data is NULL\n"
+					"(%s:%d)\n", __func__, __LINE__);
 			devm_kfree(&pdev->dev, led_data);
 		}
+	} else {
+		pr_debug("mute button: led_priv is NULL (%s:%d)\n",
+				__func__, __LINE__);
 	}
-	else
-		pr_debug("mute button: led_priv is NULL (%s:%d)\n",__func__,__LINE__);
-
 
 	led_mutebutton_create_of(&pdev->dev, mt_pwm->led_priv);
 #endif
@@ -651,7 +822,8 @@ static int mtk_pwm_probe(struct platform_device *pdev)
 	for (i = 0; i < mt_pwm->data->pwm_nums; i++) {
 		mt_pwm->clks[i] = devm_clk_get(&pdev->dev, mtk_pwm_clk_name[i]);
 		if (IS_ERR(mt_pwm->clks[i])) {
-			PWM_ERR(&pdev->dev, "[PWM] clock: %s fail\n", mtk_pwm_clk_name[i]);
+			PWM_ERR(&pdev->dev, "[PWM] clock: %s fail\n",
+							mtk_pwm_clk_name[i]);
 			return PTR_ERR(mt_pwm->clks[i]);
 		}
 	}
@@ -683,15 +855,18 @@ static int mtk_pwm_probe(struct platform_device *pdev)
 #ifdef CONFIG_PWM_MUTEBUTTON
 	ret = device_create_file(mt_pwm->dev, &dev_attr_ledcalibparams);
 	if (ret) {
-		pr_info("mute button: Could not create ledcalibparams sysfs entry at %s:%d\n", __func__, __LINE__);
+		pr_info("mute button: Could not create ledcalibparams sysfs\n"
+					"entry at %s:%d\n", __func__, __LINE__);
 	}
 	ret = device_create_file(mt_pwm->dev, &dev_attr_ledpwmscaling);
 	if (ret) {
-		pr_info("mute button: Could not create ledpwmscaling sysfs entry at %s:%d\n", __func__, __LINE__);
+		pr_info("mute button: Could not create ledpwmscaling sysfs\n"
+				"entry at %s:%d\n", __func__, __LINE__);
 	}
 	ret = device_create_file(mt_pwm->dev, &dev_attr_ledpwmmaxlimit);
 	if (ret) {
-		pr_info("mute button: Could not create ledpwmmaxlimit sysfs entry at %s:%d\n", __func__, __LINE__);
+		pr_info("mute button: Could not create ledpwmmaxlimit sysfs\n"
+					"entry at %s:%d\n", __func__, __LINE__);
 	}
 #endif
 
@@ -701,6 +876,7 @@ static int mtk_pwm_probe(struct platform_device *pdev)
 static int mtk_pwm_remove(struct platform_device *pdev)
 {
 	struct mtk_com_pwm *mt_pwm = platform_get_drvdata(pdev);
+
 	return pwmchip_remove(&mt_pwm->chip);
 }
 
@@ -719,5 +895,3 @@ module_platform_driver(mtk_pwm_driver);
 MODULE_AUTHOR("Xi Chen <xixi.chen@mediatek.com>");
 MODULE_DESCRIPTION("MediaTek SoC PWM driver");
 MODULE_LICENSE("GPL v2");
-
-

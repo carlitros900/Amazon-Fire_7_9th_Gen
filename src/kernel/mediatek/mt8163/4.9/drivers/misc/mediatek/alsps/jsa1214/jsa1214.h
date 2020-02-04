@@ -140,3 +140,6 @@ extern struct platform_device *get_alsps_platformdev(void);
 extern unsigned int idme_get_alscal_value(void);
 #endif
 extern char idme_get_alscal_cap_color(void);
+#ifdef CONFIG_ALS_FORMULA_CHANGE
+extern char idme_get_productid2(void);
+#endif

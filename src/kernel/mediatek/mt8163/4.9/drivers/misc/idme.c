@@ -18,6 +18,7 @@
 
 #include <linux/kernel.h>
 
+
 #define IDME_OF_BOARD_ID	"/idme/board_id"
 #define IDME_OF_PRODUCT_ID2	"/idme/productid2"
 #define BOOT_MODE_IDME_PATH	"/idme/bootmode"
@@ -42,6 +43,12 @@
 #define PRODUCT_FEATURE_STRING_SPACE " "
 
 #define SENSOR_CAL_SIZE 96
+
+#define LEDCAL_MAX_SCALING 254
+
+#define LED_INTERCEPT_OFFSET 41
+#define BITMASK 0xFF
+
 char gbuffer[SENSOR_CAL_SIZE];
 
 static int idme_proc_show(struct seq_file *seq, void *v)
@@ -265,6 +272,23 @@ unsigned int idme_get_bootmode(void)
 }
 EXPORT_SYMBOL(idme_get_bootmode);
 
+#ifdef CONFIG_ALS_FORMULA_CHANGE
+char idme_get_productid2(void){
+    struct device_node *ap = NULL;
+    char *productid2 = NULL;
+
+    ap = of_find_node_by_path(IDME_OF_PRODUCT_ID2);
+    if (ap){
+        productid2 = (char *)of_get_property(ap, "value", NULL);
+        pr_info("productid2= %s\n", productid2);
+    } else
+        pr_err("of_find_node_by_path failed\n");
+
+    return *productid2;
+}
+EXPORT_SYMBOL(idme_get_productid2);
+#endif
+
 #ifdef CONFIG_MTK_JSA1214_SWITCH_RANGE_AUTO
 char idme_get_alscal_cap_color(void){
     struct device_node *ap = NULL;
@@ -274,20 +298,21 @@ char idme_get_alscal_cap_color(void){
     const char default_black_color = '0';
 
     ap = of_find_node_by_path(IDME_OF_ALSCAL);
-    if (ap){
+    if (ap) {
         alscal = (char *)of_get_property(ap, "value", NULL);
         pr_info("alscal= %s\n", alscal);
     } else {
         pr_err("of_find_node_by_path failed\n");
     }
     alscal_capcolor = strstr(alscal,substr);
-    if(alscal_capcolor == NULL)
+    if (alscal_capcolor == NULL)
         return default_black_color;
     else
-        return  alscal_capcolor[10];
+        return alscal_capcolor[10];
 }
 EXPORT_SYMBOL(idme_get_alscal_cap_color);
 #endif
+
 unsigned int idme_get_alscal_value(void)
 {
     struct device_node *ap = NULL;
@@ -385,11 +410,49 @@ unsigned int idme_get_ledcal_value(void)
     /* retdata[1]: RR,  retdata[2]: GG, retdata[3]: BB*/
     pr_debug("retdata(0xRRGGBB) %02x, %02x, %02x, %02x\n",retdata[0], retdata[1], retdata[2], retdata[3]);
     ledcal_value |= (unsigned int)(retdata[1] & 0x000000FF);
+
     pr_debug("ledcal_value %d\n", ledcal_value);
 
     return ledcal_value;
 }
 EXPORT_SYMBOL(idme_get_ledcal_value);
+
+unsigned int idme_get_intercept_value(void)
+{
+	struct device_node *ap;
+	char *ledcal;
+	char ledpwm_ledcal_intercept[9] = {'\0'};
+	s8 *retdata;
+	unsigned int ledcal_intercept_value = 0;
+
+	ap = of_find_node_by_path(IDME_OF_LEDPARAMS);
+	if (ap) {
+		ledcal = (char *)of_get_property(ap, "value", NULL);
+		pr_info("ledcal: %s\n", ledcal);
+	} else {
+		pr_err("of_find_node_by_path failed\n");
+		return 0;
+	}
+
+	strlcpy(ledpwm_ledcal_intercept, ledcal+LED_INTERCEPT_OFFSET, sizeof(ledpwm_ledcal_intercept));
+	pr_debug("ledpwm_ledcal_intercept = %s\n", ledpwm_ledcal_intercept);
+
+	retdata = hexToBytes(ledpwm_ledcal_intercept);
+
+        if (!retdata) {
+                pr_err("%s idme intercept value is NULL", __func__);
+                return 0;
+        }
+
+	/*retdata[0]:not used, retdata[1]: RR,  retdata[2]: GG, retdata[3]: BB*/
+	pr_debug("retdata(0xRRGGBB) %02x, %02x, %02x, %02x\n",retdata[0], retdata[1], retdata[2], retdata[3]);
+	ledcal_intercept_value = (unsigned int)(retdata[1] & BITMASK);
+
+	pr_debug("ledcal_intercept_value = 0x%02x\n",ledcal_intercept_value);
+
+	return ledcal_intercept_value;
+}
+EXPORT_SYMBOL(idme_get_intercept_value);
 
 unsigned int idme_get_ledpwmmaxlimit_value(void)
 {

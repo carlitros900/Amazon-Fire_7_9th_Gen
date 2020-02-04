@@ -13,3 +13,11 @@ config MTK_JSA1214_SWITCH_RANGE_AUTO
 	help
 	  If this option is set, it will support
 	  for switching range automatic.
+
+config ALS_FORMULA_CHANGE
+	bool "JSA1214 support read productid2.If 1, use old formula,else, use new formula"
+	default n
+	depends on MTK_JSA1214
+	help
+	  If this option is set, it will support
+	  for changing als formula.

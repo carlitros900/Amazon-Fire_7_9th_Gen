@@ -2012,12 +2012,20 @@ static int rt551x_i2c_probe(struct i2c_client *i2c,
 			dev_err(&i2c->dev,
 				"Device with ID register %#x is not rt5514 or rt5518\n",
 				ret);
-			return -ENODEV;
+			// if i2c cannot read the correct device ID, use rt5518 as default.
+			rt551x->chip_id = RT5518_DEVICE_ID;
+			rt551x->regmap = devm_regmap_init_i2c(i2c, &rt5518_regmap);
+			rt551x->fp_reset = rt5518_reset;
+			rt551x->fp_enable_dsp = rt5518_enable_dsp;
+			rt551x->fp_enable_dsp_clock = rt5518_enable_dsp_clock;
+			rt551x->fp_readable_register = rt5518_readable_register;
+			ret = rt5518_hw_reset_gpio_init(rt551x);
+			// return -ENODEV;
 	}
 	// get the gain settings from dts in the early stage
 	rt5518_gain_init();
 	// now reset the chip
-    rt551x_reset(rt551x);
+	rt551x_reset(rt551x);
 
 	ret = device_create_file(&i2c->dev, &dev_attr_rt551x_reg);
 

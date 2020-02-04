@@ -233,7 +233,7 @@ static void button_input_event_work_func(struct work_struct *work)
 		handle_gating_button_event(input, !value);
 		input_report_key(input->input_dev, input->code, !value);
 		input_sync(input->input_dev);
-		pr_debug("%s: sent a fake event : %d\n", __func__, !value);
+		pr_info("%s: sent a fake event : %d\n", __func__, !value);
 	} else {
 		input->last_button_event = value;
 	}
@@ -241,6 +241,7 @@ static void button_input_event_work_func(struct work_struct *work)
 	handle_gating_button_event(input, value);
 	input_report_key(input->input_dev, input->code, value);
 	input_sync(input->input_dev);
+	pr_info("%s: sent an event : %d\n", __func__, value);
 
 	if (input->wakeup_capable)
 		pm_relax(input->input_dev->dev.parent);

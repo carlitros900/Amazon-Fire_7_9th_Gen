@@ -100,6 +100,9 @@ struct alsps_hw *get_alsps_dts_func(const char *name, struct alsps_hw *hw)
 	u32 ps_threshold_low[] = {0};
 	u32 is_batch_supported_ps[] = {0};
 	u32 is_batch_supported_als[] = {0};
+	u32 als_compensation[] = {0};
+	u32 black_als_range[] = {0};
+	u32 white_als_range[] = {0};
 	struct device_node *node = NULL;
 
 	SENSOR_LOG("Device Tree get alsps info!\n");
@@ -167,6 +170,18 @@ struct alsps_hw *get_alsps_dts_func(const char *name, struct alsps_hw *hw)
 		ARRAY_SIZE(is_batch_supported_als));
 	if (ret == 0)
 		hw->is_batch_supported_als		 = is_batch_supported_als[0];
+
+	ret = of_property_read_u32_array(node , "als_compensation", als_compensation, ARRAY_SIZE(als_compensation));
+	if (ret == 0)
+		hw->als_compensation		 = als_compensation[0];
+
+	ret = of_property_read_u32_array(node , "black_als_range", black_als_range, ARRAY_SIZE(black_als_range));
+	if (ret == 0)
+		hw->black_als_range		 = black_als_range[0];
+
+	ret = of_property_read_u32_array(node , "white_als_range", white_als_range, ARRAY_SIZE(white_als_range));
+	if (ret == 0)
+		hw->white_als_range		 = white_als_range[0];
 	} else {
 		SENSOR_ERR("Device Tree: can not find alsps node!. Go to use old cust info\n");
 		return NULL;

@@ -11,7 +11,6 @@
  * GNU General Public License for more details.
  */
 
-#if defined(MTK_LCM_DEVICE_TREE_SUPPORT)
 #ifndef BUILD_LK
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -268,7 +267,7 @@ enum LCM_STATUS lcm_i2c_set_data(char type, const struct LCM_DATA_T2 *t2)
 #endif
 	return LCM_STATUS_OK;
 }
-
+EXPORT_SYMBOL(lcm_i2c_set_data);
 
 
 #ifndef CONFIG_FPGA_EARLY_PORTING
@@ -278,5 +277,4 @@ module_exit(_lcm_i2c_exit);
 MODULE_AUTHOR("Joey Pan");
 MODULE_DESCRIPTION("MTK LCM I2C Driver");
 MODULE_LICENSE("GPL");
-#endif
 #endif

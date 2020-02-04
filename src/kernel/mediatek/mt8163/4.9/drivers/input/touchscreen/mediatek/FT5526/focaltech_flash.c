@@ -1102,7 +1102,7 @@ int fts_upgrade_bin(char *fw_name, bool force)
 
     ret = fts_read_file(fw_name, &fw_file_buf);
     if ((ret < 0) || (ret < FTS_MIN_LEN) || (ret > FTS_MAX_LEN_FILE)) {
-        FTS_ERROR("read fw bin file(sdcard) fail, len:%d", fw_file_len);
+        FTS_ERROR("read fw bin file(/etc/firmware/) fail, len:%d", fw_file_len);
         goto err_bin;
     }
 
@@ -1901,6 +1901,23 @@ static void fts_fwupg_work(struct work_struct *work)
 {
     int ret = 0;
     struct fts_upgrade *upg = fwupgrade;
+    struct device_node *root;
+    const char* version = NULL;
+
+    root = of_find_node_by_path("/");
+    if (!root) {
+        FTS_ERROR("ERROR : not find node by path / ");
+        return;
+    } else {
+        of_property_read_string(root, "version", &version);
+    }
+
+    if (!!strcmp("evt", version) &&
+	!!strcmp("evt_1_1", version) &&
+	!!strcmp("dvt", version)) {
+        FTS_INFO("Firmware upgrade is not enabled on this build config");
+        return;
+    }
 
 #if !FTS_AUTO_UPGRADE_EN
     FTS_INFO("FTS_AUTO_UPGRADE_EN is disabled, not upgrade when power on");

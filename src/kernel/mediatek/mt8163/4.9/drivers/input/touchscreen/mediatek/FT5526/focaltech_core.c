@@ -53,8 +53,8 @@
 #define INTERVAL_READ_REG                   200  /* unit:ms */
 #define TIMEOUT_READ_REG                    1000 /* unit:ms */
 #if FTS_POWER_SOURCE_CUST_EN
-#define FTS_VTG_MIN_UV                      2600000
-#define FTS_VTG_MAX_UV                      3300000
+#define FTS_VTG_MIN_UV                      3000000
+#define FTS_VTG_MAX_UV                      3000000
 #define FTS_I2C_VTG_MIN_UV                  1800000
 #define FTS_I2C_VTG_MAX_UV                  1800000
 #endif
@@ -423,6 +423,7 @@ static int fts_input_report_b(struct fts_ts_data *data)
 {
     int ret = 0;
     u8 id_val = 0;
+    u8 fw_ver = 0;
     int i = 0;
     int uppoint = 0;
     int touchs = 0;
@@ -456,16 +457,18 @@ static int fts_input_report_b(struct fts_ts_data *data)
                 FTS_ERROR("read vendor id from tp fail");
                 return ret;
             }
-            FTS_DEBUG("vendor id is %x",id_val);
-            if (id_val == VENDOR_ID_TG) {
+            ret = fts_read_reg(FTS_REG_FW_VER, &fw_ver);
+            if (ret < 0) {
+                FTS_ERROR("read firmware version from tp fail");
+                return ret;
+            }
+            if ((0x05 == fw_ver) && (id_val == VENDOR_ID_WALLY)) {
+                events[i].x = (data->pdata->x_max) - events[i].x;
+            } else {
                 events[i].x -= events[i].y;
                 events[i].y += events[i].x;
                 events[i].x = events[i].y-events[i].x;
                 events[i].x = (data->pdata->x_max) - events[i].x;
-            } else if (id_val == VENDOR_ID_WALLY) {
-                events[i].x = (data->pdata->x_max) - events[i].x;
-            } else {
-                FTS_DEBUG("x and y coordinates normal!");
             }
             /* end */
             input_report_abs(data->input_dev, ABS_MT_TOUCH_MAJOR, events[i].area);
@@ -987,6 +990,21 @@ static int fts_power_source_init(struct fts_ts_data *ts_data)
         FTS_ERROR("get vdd regulator failed,ret=%d", ret);
         return ret;
     }
+
+/*****************************************************************************
+ * Changed for power sequence, Vdd default on when boot not during reset time
+ * Do vdd regulator enable before disable for balance
+*****************************************************************************/
+    ret = regulator_enable(ts_data->vdd);
+    if (ret) {
+        FTS_ERROR("fail to enable vdd regulator,ret=%d",ret);
+    }
+    ret = regulator_disable(ts_data->vdd);
+    if (ret) {
+        FTS_ERROR("fail to disable vdd regulator,ret=%d",ret);
+    }
+    msleep(1);
+    /*end*/
 
     if (regulator_count_voltages(ts_data->vdd) > 0) {
         ret = regulator_set_voltage(ts_data->vdd, FTS_VTG_MIN_UV,
@@ -1588,20 +1606,22 @@ static int fts_ts_suspend(struct device *dev)
     }
 #endif
 
-    fts_irq_disable();
+    if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT) {
+        fts_irq_disable();
 
-    /* TP enter sleep mode */
-    ret = fts_write_reg(FTS_REG_POWER_MODE, FTS_REG_POWER_MODE_SLEEP_VALUE);
-    if (ret < 0)
-        FTS_ERROR("set TP to sleep mode fail, ret=%d", ret);
+        /* TP enter sleep mode */
+        ret = fts_write_reg(FTS_REG_POWER_MODE, FTS_REG_POWER_MODE_SLEEP_VALUE);
+        if (ret < 0)
+            FTS_ERROR("set TP to sleep mode fail, ret=%d", ret);
 
-    if (!ts_data->ic_info.is_incell) {
+        if (!ts_data->ic_info.is_incell) {
 #if FTS_POWER_SOURCE_CUST_EN
-        ret = fts_power_source_suspend(ts_data);
-        if (ret < 0) {
-            FTS_ERROR("power enter suspend fail");
-        }
+            ret = fts_power_source_suspend(ts_data);
+            if (ret < 0) {
+                FTS_ERROR("power enter suspend fail");
+            }
 #endif
+        }
     }
 
     ts_data->suspended = true;
@@ -1619,16 +1639,19 @@ static int fts_ts_resume(struct device *dev)
         return 0;
     }
 
-    fts_release_all_finger();
+    if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT) {
+        fts_release_all_finger();
 
-    if (!ts_data->ic_info.is_incell) {
+        if (!ts_data->ic_info.is_incell) {
 #if FTS_POWER_SOURCE_CUST_EN
-        fts_power_source_resume(ts_data);
+            fts_power_source_resume(ts_data);
 #endif
-        fts_reset_proc(200);
-    }
+            fts_reset_proc(200);
+        }
 
-    fts_tp_state_recovery(ts_data);
+        fts_tp_state_recovery(ts_data);
+        fts_irq_enable();
+    }
 
 #if FTS_ESDCHECK_EN
     fts_esdcheck_resume();
@@ -1640,8 +1663,6 @@ static int fts_ts_resume(struct device *dev)
         return 0;
     }
 #endif
-
-    fts_irq_enable();
 
     ts_data->suspended = false;
     FTS_FUNC_EXIT();

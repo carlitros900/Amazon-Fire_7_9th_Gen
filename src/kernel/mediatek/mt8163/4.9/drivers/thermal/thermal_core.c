@@ -245,8 +245,7 @@ int get_tz_trend(struct thermal_zone_device *tz, int trip)
 {
 	enum thermal_trend trend;
 
-	if (tz->emul_temperature || !tz->ops->get_trend ||
-	    tz->ops->get_trend(tz, trip, &trend)) {
+	if (!tz->ops->get_trend || tz->ops->get_trend(tz, trip, &trend)) {
 		if (tz->temperature > tz->last_temperature)
 			trend = THERMAL_TREND_RAISING;
 		else if (tz->temperature < tz->last_temperature)
@@ -497,13 +496,13 @@ static void handle_critical_trips(struct thermal_zone_device *tz,
 		int ret;
 		unsigned long state;
 		struct thermal_cooling_device *cdev;
-		char data[3][32];
-		char *envp[] = { data[0], data[1], data[2], NULL };
 
-		snprintf(data[0], sizeof(data[0]),
-					"THERMAL_TRIP_TYPE=CRITICAL");
-		snprintf(data[1], sizeof(data[1]), "ID=%d", tz->id);
-		snprintf(data[2], sizeof(data[2]), "TZTYPE=%s", tz->type);
+		char data[2][28];
+		char *envp[] = { data[0], data[1], NULL};
+
+		snprintf(data[0], sizeof(data[0]), "TRIP=%d", trip);
+		snprintf(data[1], sizeof(data[1]), "THERMAL_STATE=%d", trip+1);
+
 		dev_emerg(&tz->device,
 			  "critical temperature reached(%d C),shutting down\n",
 			  tz->temperature / 1000);
@@ -764,7 +763,10 @@ trips_store(struct device *dev, struct device_attribute *attr,
 	unbind_all_tz(tz);
 	mutex_lock(&tz->lock);
 	mask = (1 << ntrip) - 1;
-	of_thermal_set_ntrips(tz, ntrip);
+	if (tz->ops->set_ntrips) {
+		tz->ops->set_ntrips(tz, ntrip);
+	}
+	tz->trips = ntrip;
 	create_trip_attrs(tz, mask);
 	mutex_unlock(&tz->lock);
 	return count;

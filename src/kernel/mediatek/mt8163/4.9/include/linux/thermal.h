@@ -123,6 +123,9 @@ struct thermal_zone_device_ops {
 	int (*get_trip_hyst) (struct thermal_zone_device *, int, int *);
 	int (*set_trip_hyst) (struct thermal_zone_device *, int, int);
 	int (*get_crit_temp) (struct thermal_zone_device *, int *);
+#ifdef CONFIG_AMAZON_THERMAL
+	int (*set_ntrips) (struct thermal_zone_device *, unsigned int);
+#endif
 	int (*set_emul_temp) (struct thermal_zone_device *, int);
 	int (*get_trend) (struct thermal_zone_device *, int,
 			  enum thermal_trend *);

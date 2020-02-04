@@ -63,6 +63,12 @@ struct BTS_TEMPERATURE {
 };
 /* BTS_TEMPERATURE;*/
 
+#ifdef CONFIG_THERMAL_abc123
+#define NTC_TBL_SIZE_ERROR -200
+static int ntc_tbl_size = 0;
+static struct BTS_TEMPERATURE *BTS_Temperature_Table;
+extern void mtkts_bts_prepare_table(int table_num);
+#endif
 struct mtkts_bts_channel_param {
 	int g_RAP_pull_up_R;
 	int g_TAP_over_critical_low;
@@ -111,13 +117,7 @@ static int trip_temp[10] = {
 	120000, 110000, 100000, 90000, 80000, 70000, 65000, 60000, 55000, 50000
 };
 
-#ifdef CONFIG_THERMAL_abc123
-#define AUX_NUM 4
-#else
-#define AUX_NUM 3
-#endif
-
-static struct thermal_zone_device *thz_dev[AUX_NUM];
+static struct thermal_zone_device *thz_dev[AUX_CHANNEL_NUM];
 static int mtkts_bts_debug_log;
 static int kernelmode;
 static int g_THERMAL_TRIP[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -198,8 +198,17 @@ static signed short mtkts_bts_thermistor_conver_temp(signed int Res)
 	signed int RES1 = 0, RES2 = 0;
 	signed int TAP_Value = -200, TMP1 = 0, TMP2 = 0;
 
+#ifdef CONFIG_THERMAL_abc123
+	if (ntc_tbl_size <= 0) {
+		pr_err("ntc_tbl_size value %d error\n",ntc_tbl_size);
+		return NTC_TBL_SIZE_ERROR;
+	} else {
+		asize = (ntc_tbl_size/sizeof(struct BTS_TEMPERATURE));
+	}
+#else
 	asize = (sizeof(BTS_Temperature_Table) /
 		sizeof(struct BTS_TEMPERATURE));
+#endif
 	/* xlog_printk(ANDROID_LOG_INFO, "Power/BTS_Thermal",
 	 * "mtkts_bts_thermistor_conver_temp() :
 	 * asize = %d, Res = %d\n",asize,Res);
@@ -273,6 +282,9 @@ static signed short mtk_ts_bts_volt_to_temp(int index, unsigned int dwVolt)
 	mtkts_bts_dprintk("index=%d, dwVCriAP=%d, TRes=%d\n",
 		index, dwVCriAP, TRes);
 	bts_channel_param[index].g_AP_TemperatureR = TRes;
+#ifdef CONFIG_THERMAL_abc123
+	mtkts_bts_prepare_table(bts_channel_param[index].g_RAP_ntc_table);
+#endif
 
 	/* convert register to temperature */
 	BTS_TMP = mtkts_bts_thermistor_conver_temp(TRes);
@@ -734,9 +746,48 @@ void mtkts_bts_copy_table(struct BTS_TEMPERATURE *des,
 		des[i] = src[i];
 }
 
+#ifdef CONFIG_THERMAL_abc123
 void mtkts_bts_prepare_table(int table_num)
 {
 
+	switch (table_num) {
+	case 1:
+		BTS_Temperature_Table = BTS_Temperature_Table1;
+		ntc_tbl_size = sizeof(BTS_Temperature_Table1);
+		break;
+	case 2:
+		BTS_Temperature_Table = BTS_Temperature_Table2;
+		ntc_tbl_size = sizeof(BTS_Temperature_Table2);
+		break;
+	case 3:
+		BTS_Temperature_Table = BTS_Temperature_Table3;
+		ntc_tbl_size = sizeof(BTS_Temperature_Table3);
+		break;
+	case 4:
+		BTS_Temperature_Table = BTS_Temperature_Table4;
+		ntc_tbl_size = sizeof(BTS_Temperature_Table4);
+		break;
+	case 5:
+		BTS_Temperature_Table = BTS_Temperature_Table5;
+		ntc_tbl_size = sizeof(BTS_Temperature_Table5);
+		break;
+	case 6:		/* NCP03WF104F05R */
+		BTS_Temperature_Table = BTS_Temperature_Table6;
+		ntc_tbl_size = sizeof(BTS_Temperature_Table6);
+		break;
+	case 7:		/* NCU18XH103F60RB */
+		BTS_Temperature_Table = BTS_Temperature_Table7;
+		ntc_tbl_size = sizeof(BTS_Temperature_Table7);
+		break;
+	default:	/* AP_NTC_10 */
+		BTS_Temperature_Table = BTS_Temperature_Table4;
+		ntc_tbl_size = sizeof(BTS_Temperature_Table4);
+		break;
+	}
+}
+#else
+void mtkts_bts_prepare_table(int table_num)
+{
 	switch (table_num) {
 	case 1:		/* AP_NTC_BL197 */
 		mtkts_bts_copy_table(BTS_Temperature_Table,
@@ -796,6 +847,7 @@ void mtkts_bts_prepare_table(int table_num)
 		break;
 	}
 }
+#endif
 
 static int mtkts_bts_param_read(struct seq_file *m, void *v)
 {

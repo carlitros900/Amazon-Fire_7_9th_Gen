@@ -115,8 +115,8 @@
 		temp = <44000 44500 45000 45500 49000 52000 53000 54000 56000 56000 56000 56000>;
 		type = <0 0 0 0 0 0 0 0 3 3 3 3>;
 		hyst = <0 0 0 0 0 0 0 0 0 0 0 0>;
-		num_cdevs = <3>;
-		cdev_names = "thermal_budget0","lcd-backlight0","bcct0";
+		num_cdevs = <2>;
+		cdev_names = "thermal_budget0","lcd-backlight0";
 	};
 	virtual_sensor@1{
 		compatible = "amazon,virtual_sensor-thermal";
@@ -129,8 +129,8 @@
 		temp = <49000 49500 50000 50500 53000 56000 57000 58000 60000 60000 60000 60000>;
 		type = <0 0 0 0 0 0 0 0 3 3 3 3>;
 		hyst = <0 0 0 0 0 0 0 0 0 0 0 0>;
-		num_cdevs = <3>;
-		cdev_names = "thermal_budget1","lcd-backlight1","bcct1";
+		num_cdevs = <2>;
+		cdev_names = "thermal_budget1","bcct1";
 	};
     /*Virtual sensor wmt*/
 	thermal_wmt@0{
@@ -296,6 +296,11 @@
 		compatible = "amzn,silent-ota";
 		keys_down = "KEY_POWER";
 		keys_down_delay = <0>;
+		status = "okay";
+	};
+
+	integrity-module {
+		compatible = "amzn,integrity-module";
 		status = "okay";
 	};
 };

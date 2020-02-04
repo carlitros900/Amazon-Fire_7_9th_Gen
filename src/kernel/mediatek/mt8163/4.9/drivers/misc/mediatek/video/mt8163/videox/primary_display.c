@@ -5161,6 +5161,7 @@ int primary_display_free_fb_buf(void)
 		if (fbi) {
 			fbi->fix.smem_start = 0;
 			fbi->fix.smem_len = 0;
+			fbi->screen_base = 0;
 		}
 	}
 

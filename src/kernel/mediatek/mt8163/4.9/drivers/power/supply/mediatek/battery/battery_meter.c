@@ -53,6 +53,7 @@
 #include <mt-plat/battery_meter_hal.h>
 #include <mach/mtk_battery_meter.h>
 #include <mt-plat/upmu_common.h>
+#include "battery_metrics.h"
 
 #if defined(CONFIG_MTK_INTERNAL_CHARGER_SUPPORT)
 #include <mt-plat/internal_charging.h>
@@ -203,6 +204,9 @@ struct timespec last_oam_run_time;
  */
 static int g_wifi_on;
 static int g_slp_current;
+static int g_slp_time_min = 20;
+static bool g_skip_reset_sleep_time;
+
 
 /* aging mechanism */
 #ifdef MTK_ENABLE_AGING_ALGORITHM
@@ -4126,7 +4130,11 @@ static int battery_meter_suspend(
 			return 0;
 #endif
 		get_monotonic_boottime(&xts_before_sleep);
-		get_monotonic_boottime(&g_rtc_time_before_sleep);
+		if (!g_skip_reset_sleep_time) {
+			get_monotonic_boottime(&g_rtc_time_before_sleep);
+			pr_info("%s: reset g_rtc_time_before_sleep\n",__func__);
+		}
+
 		if (_g_bat_sleep_total_time >= g_spm_timer)
 			_g_bat_sleep_total_time = 0;
 
@@ -4159,10 +4167,15 @@ static int battery_meter_resume(struct platform_device *dev)
 	get_monotonic_boottime(&rtc_time_after_sleep);
 	sleep_interval =
 		rtc_time_after_sleep.tv_sec - g_rtc_time_before_sleep.tv_sec;
-
-	_g_bat_sleep_total_time += sleep_interval;
-	pr_debug("[%s] sleep interval=%d, sleep time=%d, g_spm_timer=%d\n",
-		__func__, sleep_interval, _g_bat_sleep_total_time, g_spm_timer);
+	if (sleep_interval <= g_slp_time_min) {
+		g_skip_reset_sleep_time = true;
+	} else {
+		g_skip_reset_sleep_time = false;
+		_g_bat_sleep_total_time += sleep_interval;
+		pr_debug("[%s] sleep interval=%d, sleep time=%d, g_spm_timer=%d\n",
+			__func__, sleep_interval,_g_bat_sleep_total_time,
+			g_spm_timer);
+	}
 
 	/* trigger gauge update if accumulated
 	 * sleep time more than give period
@@ -4220,8 +4233,9 @@ static int battery_meter_resume(struct platform_device *dev)
 		oam_car_2 = oam_car_2 + (g_slp_current*10*sleep_interval/3600);
 	}
 
-	pr_debug("sleeptime=(%d)s, be_ocv=(%d), af_ocv=(%d), D0=(%d), car1=(%d), car2=(%d)\n",
-		_g_bat_sleep_total_time, g_hw_ocv_before_sleep,
+	pr_warn("%s: sleeptime=(%d)s, interval(%d)s, skip_reset_sleeptime(%d), be_ocv=(%d), af_ocv=(%d), D0=(%d), car1=(%d), car2=(%d)\n",
+		__func__, _g_bat_sleep_total_time, sleep_interval,
+		g_skip_reset_sleep_time, g_hw_ocv_before_sleep,
 		hw_ocv_after_sleep, oam_d0, oam_car_1, oam_car_2);
 #endif
 #endif
@@ -4279,8 +4293,12 @@ static int wifi_notifier_call(struct notifier_block *nb,
 			else
 				g_slp_current = batt_meter_cust_data.slp_current;
 
-			pr_info("%s: is_carrier_ok=%d g_slp_current=%d\n",
-					__func__, is_carrier_ok, g_slp_current);
+			bat_metrics_slp_current(g_slp_current);
+			/* Get minimum time slice of sleep time for rounded error */
+			g_slp_time_min = (3600 / (g_slp_current * 10)) + 5;
+			pr_info("%s: is_carrier_ok=%d g_slp_current=%d g_slp_time_min=%d\n",
+					__func__, is_carrier_ok,
+					g_slp_current, g_slp_time_min);
 		}
 		break;
 	default:

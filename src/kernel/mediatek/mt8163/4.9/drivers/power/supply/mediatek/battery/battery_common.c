@@ -3402,6 +3402,8 @@ static void mt_battery_charger_detect_check(void)
 
 		mt_usb_disconnect();
 	}
+
+	bat_metrics_chrdet(BMT_status.charger_type);
 }
 
 static void mt_kpoc_power_off_check(void)
@@ -3422,6 +3424,29 @@ static void mt_kpoc_power_off_check(void)
 		}
 	}
 #endif
+}
+
+static void mt_otg_check(void)
+{
+	int vbus_stat, otg_en = 0;
+
+	/*
+	 * Workabound for abnormal otg status
+	 * If OTG status in charger IC and USB mismatch when VBUS is valid,
+	 * that could be a HW issue of charger IC, or someone set OTG status
+	 * directly without OTG driver.
+	 * Clean OTG stauts of charger IC.
+	 */
+	if (upmu_get_rgs_chrdet()) {
+		battery_charging_control(
+			CHARGING_CMD_GET_VBUS_STAT, &vbus_stat);
+		if ((vbus_stat == VBUS_STAT_OTG) && mt_usb_is_device()) {
+			pr_err("%s: incorrect OTG status, clean it and ignore vubs event\n",
+				__func__);
+			battery_charging_control(
+				CHARGING_CMD_BOOST_ENABLE, &otg_en);
+		}
+	}
 }
 
 void update_battery_2nd_info(int status_smb, int capacity_smb, int present_smb)
@@ -3446,9 +3471,6 @@ extern void musb_rerun_dock_detection(void);
 #endif
 void do_chrdet_int_task(void)
 {
-	int vbus_stat = 0;
-	int otg_en = 0;
-
 	if (g_bat_init_flag == true) {
 
 #ifdef CONFIG_USB_AMAZON_DOCK
@@ -3457,25 +3479,9 @@ void do_chrdet_int_task(void)
 #endif
 
 		if (upmu_is_chr_det() == true) {
-			/*
-			 * Workabound for abnormal otg status
-			 * if code run here and get OTG status form charger IC,
-			 * that means someone set OTG status abnormally or HW
-			 * issue happens in charger IC, therefor we need clean
-			 * OTG mode and ignore this vbus event
-			 */
-			battery_charging_control(
-				CHARGING_CMD_GET_VBUS_STAT, &vbus_stat);
-			if (vbus_stat == VBUS_STAT_OTG) {
-				pr_err("%s: incorrect OTG status, clean it and ignore vubs event\n",
-					__func__);
-				battery_charging_control(
-					CHARGING_CMD_BOOST_ENABLE, &otg_en);
-				return;
-			}
-
 			pr_notice("[do_chrdet_int_task] charger exist!\n");
 			BMT_status.charger_exist = true;
+			bat_metrics_vbus(true);
 			if (!is_usb_rdy()) {
 				usb_update(&usb_main);
 				ac_update(&ac_main);
@@ -3499,6 +3505,7 @@ void do_chrdet_int_task(void)
 			pr_notice("[do_chrdet_int_task] charger NOT exist!\n");
 
 			BMT_status.charger_exist = false;
+			bat_metrics_vbus(false);
 			BMT_status.force_trigger_charging = true;
 			if (!is_usb_rdy()) {
 				usb_update(&usb_main);
@@ -3538,8 +3545,6 @@ void do_chrdet_int_task(void)
 			}
 #endif
 		}
-
-		bat_metrics_chrdet(BMT_status.charger_type);
 
 		/* Place charger detection and battery update
 		 * here is used to speed up charging icon display.
@@ -3592,6 +3597,7 @@ void BAT_thread(void)
 		battery_meter_initilized = true;
 	}
 
+	mt_otg_check();
 	mt_battery_charger_detect_check();
 	if (fg_battery_shutdown)
 		return;

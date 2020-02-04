@@ -49,20 +49,50 @@ struct pm_state {
 	int resume_bat_car;
 };
 
+struct fg_slp_current_data {
+	struct timespec last_ts;
+	int slp_ma;
+};
+
 struct bat_metrics_data {
 	bool is_top_off_mode;
 	bool is_demo_mode;
+	bool vbus_on_old;
 	u8 fault_type_old;
 	u32 chg_sts_old;
+	u32 chg_type_old;
 
 	struct screen_state screen;
 	struct pm_state pm;
 	struct battery_meter_data bat_data;
+	struct fg_slp_current_data slp_curr_data;
 #if defined(CONFIG_FB)
 	struct notifier_block pm_notifier;
 #endif
 };
 static struct bat_metrics_data metrics_data;
+
+int bat_metrics_slp_current(u32 ma)
+{
+	struct fg_slp_current_data *slp = &metrics_data.slp_curr_data;
+	struct timespec now_ts, gap_ts;
+	long elapsed;
+
+	get_monotonic_boottime(&now_ts);
+	if (slp->slp_ma == 0)
+		goto exit;
+
+	gap_ts = timespec_sub(now_ts, slp->last_ts);
+	elapsed = gap_ts.tv_sec;
+	bat_metrics_log("battery",
+			"FGSleepCurrent:def:Slp_mA_%d=1;CT;1,elapsed=%ld;TI;1:NR",
+			ma, elapsed);
+
+exit:
+	slp->slp_ma = ma;
+	slp->last_ts = now_ts;
+	return 0;
+}
 
 int bat_metrics_aicl(bool is_detected, u32 aicl_result)
 {
@@ -70,6 +100,18 @@ int bat_metrics_aicl(bool is_detected, u32 aicl_result)
 	bat_metrics_log("AICL",
 		"%s:aicl:detected=%d;CT;1,aicl_result=%d;CT;1:NR",
 		__func__, is_detected, aicl_result);
+
+	return 0;
+}
+
+int bat_metrics_vbus(bool is_on)
+{
+	if (metrics_data.vbus_on_old == is_on)
+		return 0;
+
+	metrics_data.vbus_on_old = is_on;
+	bat_metrics_log("USBCableEvent",
+		"bq24297:vbus_%s=1;CT;1:NR", is_on ? "on" : "off");
 
 	return 0;
 }
@@ -82,6 +124,10 @@ int bat_metrics_chrdet(u32 chr_type)
 		"APPLE_1_0A_CHARGER", "APPLE_0_5A_CHARGER", "WIRELESS_CHARGER"
 	};
 
+	if (metrics_data.chg_type_old == chr_type)
+		return 0;
+
+	metrics_data.chg_type_old = chr_type;
 	if (chr_type > CHARGER_UNKNOWN && chr_type <= WIRELESS_CHARGER) {
 		bat_metrics_log("USBCableEvent",
 			"%s:bq24297:chg_type_%s=1;CT;1:NR",

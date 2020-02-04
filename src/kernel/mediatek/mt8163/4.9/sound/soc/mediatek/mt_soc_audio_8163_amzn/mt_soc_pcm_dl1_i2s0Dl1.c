@@ -615,7 +615,6 @@ static int mtk_pcm_I2S0dl1_open(struct snd_pcm_substream *substream)
 
 static int mtk_pcm_I2S0dl1_close(struct snd_pcm_substream *substream)
 {
-	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct mt_pcm_I2S0dl1_priv *priv = dev_get_drvdata(mDev);
 
 	I2S0dl1_substream = NULL;
@@ -624,18 +623,20 @@ static int mtk_pcm_I2S0dl1_close(struct snd_pcm_substream *substream)
 
 	if (mPrepareDone == true) {
 		/* stop DAC output */
-		SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, false);
+		if (!mI2S0dl1_hdoutput_control) {
+			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, false);
 
-		if (GetI2SDacEnable() == false)
-			SetI2SDacEnable(false);
+			if (GetI2SDacEnable() == false)
+				SetI2SDacEnable(false);
 #ifndef BCM_SCO_I2S
-		/* stop I2S output */
-		SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_2, false);
+			/* stop I2S output */
+			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_2, false);
 
-		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_2) ==
-			false)
-			Afe_Set_Reg(AFE_I2S_CON3, 0x0, 0x1);
+			if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_2) ==
+				false)
+				Afe_Set_Reg(AFE_I2S_CON3, 0x0, 0x1);
 #endif
+		}
 		RemoveMemifSubStream(Soc_Aud_Digital_Block_MEM_DL1, substream);
 
 		/* here stop digital part */
@@ -671,19 +672,8 @@ static int mtk_pcm_I2S0dl1_close(struct snd_pcm_substream *substream)
 				Soc_Aud_InterConnectionOutput_O03);
 		}
 
-		EnableAfe(false);
-
-		if (mI2S0dl1_hdoutput_control == true) {
-			pr_debug("%s mI2S0dl1_hdoutput_control == %d\n",
-				__func__,
-				mI2S0dl1_hdoutput_control);
-
-			EnableI2SDivPower(AUDIO_APLL12_DIV2, false);
-			EnableI2SDivPower(AUDIO_APLL12_DIV4, false);
-
-			EnableApll(runtime->rate, false);
-			EnableApllTuner(runtime->rate, false);
-		}
+		if (!mI2S0dl1_hdoutput_control)
+			EnableAfe(false);
 
 		mPrepareDone = false;
 	}
@@ -695,8 +685,6 @@ static int mtk_pcm_I2S0dl1_close(struct snd_pcm_substream *substream)
 	ClearSramState(mPlaybackSramState);
 	mPlaybackSramState = GetSramState();
 	AfeControlSramUnLock();
-	AudDrv_Clk_Off();
-	AudDrv_ANA_Clk_Off();
 	pr_warn("-%s\n", __func__);
 	return 0;
 }

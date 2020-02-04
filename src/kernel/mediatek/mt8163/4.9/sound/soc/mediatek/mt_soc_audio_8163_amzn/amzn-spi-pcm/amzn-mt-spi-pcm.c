@@ -891,6 +891,52 @@ static const struct snd_soc_component_driver amzn_mt_spi_cpu_dai_component = {
 	.name = "amzn-mt-spi-cpu-dai",
 };
 
+static int amzn_mt_spi_tlv_reset(struct spi_device *spi)
+{
+	int ret = 0;
+	int reset_gpio = 0;
+	int reset_flag = 0;
+
+	ret = of_property_read_u32(spi->dev.of_node, "control_reset", &reset_flag);
+	if (ret < 0) {
+		pr_err("Failed to parse dts control_reset\n");
+		reset_flag = 0;
+	}
+
+	if (reset_flag == 1) {
+		reset_gpio = of_get_named_gpio(spi->dev.of_node, "reset-gpio", 0);
+		if (reset_gpio < 0) {
+			pr_info("%s: Failed to parse dts reset_gpio\n",__func__);
+		}
+
+		ret = gpio_request(reset_gpio, "rst_gpio");
+		if(ret){
+			pr_info("%s: gpio %d request failed!,ret:%d\n", __func__, reset_gpio, ret);
+			goto err_gpio;
+		}
+
+		ret = gpio_direction_output(reset_gpio, 0);
+		if(ret){
+			pr_info("%s: gpio %d unable to set as output!\n", __func__, reset_gpio);
+			goto err_free_gpio;
+		}
+
+		mdelay(10);
+
+		ret = gpio_direction_output(reset_gpio, 1);
+		if(ret){
+			pr_info("%s: gpio %d unable to set as output!\n", __func__, reset_gpio);
+			goto err_free_gpio;
+		}
+	}
+	return 0;
+err_free_gpio:
+	if (gpio_is_valid(reset_gpio))
+		gpio_free(reset_gpio);
+err_gpio:
+	return ret;
+}
+
 static int amzn_mt_spi_probe(struct spi_device *spi)
 {
 	int rc, rst_gpio;
@@ -927,6 +973,8 @@ static int amzn_mt_spi_probe(struct spi_device *spi)
 		reg_status_before, reg_status_after, volt);
 
 	msleep(FPGA_VCC_DELAY_MS);
+
+	amzn_mt_spi_tlv_reset(spi);
 
 	/* VCCIO0 Enabled */
 #ifdef CONFIG_rbc123

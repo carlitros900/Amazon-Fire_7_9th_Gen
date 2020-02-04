@@ -424,6 +424,9 @@ static int mt_soc_audio_init_rt(struct snd_soc_pcm_runtime *rtd)
 	EnableApllTuner(48000, true);
 	SetCLkMclk(Soc_Aud_I2S1, 48000);
 	EnableI2SDivPower(AUDIO_APLL12_DIV2, true);
+	SetSampleRate(Soc_Aud_Digital_Block_MEM_I2S, 48000);
+	SetI2SDacOut(48000,1, Soc_Aud_I2S_WLEN_WLEN_16BITS);
+	SetI2SDacEnable(true);
 
 	Afe_Set_Reg(AFE_I2S_CON1, 1<<12, 1<<12);
 	Afe_Set_Reg(AFE_I2S_CON1, 1, 1);        /* enable I2S1 port */

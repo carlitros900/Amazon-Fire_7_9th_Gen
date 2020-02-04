@@ -117,6 +117,7 @@
 #define RT5616_BIAS_CUR1			0x12
 #define RT5616_BIAS_CUR3			0x14
 #define RT5616_CLSD_INT_REG1			0x1c
+#define RT5616_CHARGE_PUMP_INT			0x24
 #define RT5616_MAMP_INT_REG2			0x37
 #define RT5616_CHOP_DAC_ADC			0x3d
 #define RT5616_3D_SPK				0x63
@@ -1073,6 +1074,9 @@
 #define RT5616_IB_HP_25IL			(0x1 << 6)
 #define RT5616_IB_HP_5IL			(0x2 << 6)
 #define RT5616_IB_HP_1IL			(0x3 << 6)
+#define RT5616_LOW_VOL				0x0000
+#define RT5616_MID_VOL				0x0100
+#define RT5616_HIGH_VOL_1P8			0x0200
 
 /* Micbias Control (0x93) */
 #define RT5616_MIC1_BS_MASK			(0x1 << 15)
@@ -1737,6 +1741,26 @@
 #define RT5616_D_GATE_EN_SFT			0
 
 /* Codec Private Register definition */
+/* RT5616_CHARGE_PUMP_INT (0x24) */
+#define RT5616_CHARGE_SMALL_MASK		(0x7 << 8)
+#define RT5616_CHARGE_SMALL			(0x1 << 8)
+#define RT5616_CHARGE_LARGE			(0x4 << 8)
+#define RT5616_CP_DLN_MASK			(0x3 << 6)
+#define RT5616_CP_DLN_DELAY_2NS 		(0x2 << 6)
+#define RT5616_CP_CLK_MASK			(0x3 << 4)
+#define RT5616_CP_CLK_300KHZ			(0x2 << 4)
+
+/* Soft Ramp for depop (0x37) */
+#define RT5616_RAMP_VTH_MASK			(0x7 << 13)
+#define RT5616_RAMP_VTH_0P9VDD			(0x7 << 13)
+#define RT5616_RAMP_VTL_MASK			(0x7 << 10)
+#define RT5616_RAMP_VTL_0P9VDD			(0x7 << 10)
+
+/* Chopper Control for DAC (0x3d) */
+#define RT5616_CLK_GEN_EN_MASK			(0x1 << 9)
+#define RT5616_CLK_GEN_EN			(0x1 << 9)
+#define RT5616_CLK_GEN_DIS			(0x0 << 9)
+
 /* 3D Speaker Control (0x63) */
 #define RT5616_3D_SPK_MASK			(0x1 << 15)
 #define RT5616_3D_SPK_SFT			15
@@ -1793,6 +1817,17 @@ enum {
 #define RT5616_DP_SPK_SFT			10
 #define RT5616_DP_SPK_DIS			(0x0 << 10)
 #define RT5616_DP_SPK_EN			(0x1 << 10)
+
+/* HP DC Calibration Internal Control (0x77) */
+#define RT5616_CLBR_STAT_MASK			(0x1 << 15)
+#define RT5616_CLBR_STAT_BUSY			(0x1 << 15)
+#define RT5616_CLBR_STAT_IDLE			(0x0 << 15)
+#define RT5616_CLBR_MODE_MASK			(0x7 << 12)
+#define RT5616_CLBR_HP_DAC			(0x1 << 12)
+#define RT5616_AUTO_SET1_MASK			(0x3 << 10)
+#define RT5616_AUTO_SET1_10P5			(0x3 << 10)
+#define RT5616_AUTO_SET2_MASK			(0x3 << 8)
+#define RT5616_AUTO_SET2_1P31			(0x3 << 8)
 
 /* EQ Pre Volume Control (0xb3) */
 #define RT5616_EQ_PRE_VOL_MASK			(0xffff)

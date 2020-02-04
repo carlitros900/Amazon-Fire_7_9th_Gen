@@ -62,6 +62,7 @@ static const struct reg_sequence init_list[] = {
 	{RT5616_PR_BASE + 0x21,	0x4040},
 	{RT5616_PR_BASE + 0x23,	0x0004},
 	{RT5616_STO_DAC_MIXER,	0x7373},
+	{RT5616_GPIO_CTRL2,	0x0006},
 };
 
 #define RT5616_INIT_REG_LEN ARRAY_SIZE(init_list)
@@ -159,6 +160,10 @@ struct rt5616_priv {
 	/*added for differential or single_end mode*/
 	int mode;
 	/*added for differential or single_end mode*/
+	/* workaround solution for buzz and pop */
+	int depop;
+	/* abc123 add a amp control */
+	int ampctrl;
 	int sysclk;
 	int sysclk_src;
 	int lrck[RT5616_AIFS];
@@ -535,6 +540,7 @@ static int rt5616_charge_pump_event(struct snd_soc_dapm_widget *w,
 				    struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct rt5616_priv *rt5616 = snd_soc_codec_get_drvdata(codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
@@ -545,8 +551,12 @@ static int rt5616_charge_pump_event(struct snd_soc_dapm_widget *w,
 				    RT5616_HP_CP_MASK | RT5616_HP_SG_MASK |
 				    RT5616_HP_CB_MASK, RT5616_HP_CP_PU |
 				    RT5616_HP_SG_DIS | RT5616_HP_CB_PU);
-		snd_soc_write(codec, RT5616_PR_BASE +
-			      RT5616_HP_DCC_INT1, 0x9f00);
+		if (!rt5616->depop)
+			snd_soc_update_bits(codec, RT5616_PR_BASE + RT5616_HP_DCC_INT1,
+					    RT5616_CLBR_STAT_MASK | RT5616_CLBR_MODE_MASK | RT5616_AUTO_SET1_MASK |
+					    RT5616_AUTO_SET2_MASK, RT5616_CLBR_STAT_BUSY | RT5616_CLBR_HP_DAC |
+					    RT5616_AUTO_SET1_10P5 | RT5616_AUTO_SET2_1P31);
+
 		/* headphone amp power on */
 		snd_soc_update_bits(codec, RT5616_PWR_ANLG1,
 				    RT5616_PWR_FV1 | RT5616_PWR_FV2, 0);
@@ -565,30 +575,42 @@ static int rt5616_charge_pump_event(struct snd_soc_dapm_widget *w,
 		snd_soc_update_bits(codec, RT5616_CHARGE_PUMP,
 				    RT5616_PM_HP_MASK, RT5616_PM_HP_HV);
 		snd_soc_update_bits(codec, RT5616_PR_BASE +
-				    RT5616_CHOP_DAC_ADC, 0x0200, 0x0200);
+				    RT5616_CHOP_DAC_ADC, RT5616_CLK_GEN_EN_MASK,
+				    RT5616_CLK_GEN_EN);
 		snd_soc_update_bits(codec, RT5616_DEPOP_M1,
 				    RT5616_HP_CO_MASK | RT5616_HP_SG_MASK,
 				    RT5616_HP_CO_EN | RT5616_HP_SG_EN);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
 		snd_soc_update_bits(codec, RT5616_PR_BASE +
-				    RT5616_CHOP_DAC_ADC, 0x0200, 0x0);
-		snd_soc_update_bits(codec, RT5616_DEPOP_M1,
-				    RT5616_HP_SG_MASK | RT5616_HP_L_SMT_MASK |
-				    RT5616_HP_R_SMT_MASK, RT5616_HP_SG_DIS |
-				    RT5616_HP_L_SMT_DIS | RT5616_HP_R_SMT_DIS);
+				    RT5616_CHOP_DAC_ADC, RT5616_CLK_GEN_EN_MASK,
+				    RT5616_CLK_GEN_DIS);
+		if (!rt5616->depop)
+			snd_soc_update_bits(codec, RT5616_DEPOP_M1,
+					    RT5616_HP_SG_MASK | RT5616_HP_L_SMT_MASK |
+					    RT5616_HP_R_SMT_MASK, RT5616_HP_SG_DIS |
+					    RT5616_HP_L_SMT_DIS | RT5616_HP_R_SMT_DIS);
+		else
+			snd_soc_update_bits(codec, RT5616_DEPOP_M1,
+					    RT5616_HP_SG_MASK | RT5616_HP_L_SMT_MASK |
+					    RT5616_HP_R_SMT_MASK | RT5616_HP_CD_PD_MASK,
+					    RT5616_HP_SG_DIS | RT5616_HP_L_SMT_DIS |
+					    RT5616_HP_CD_PD_MASK | RT5616_HP_R_SMT_DIS);
+
 		/* headphone amp power down */
-		snd_soc_update_bits(codec, RT5616_DEPOP_M1,
-				    RT5616_SMT_TRIG_MASK |
-				    RT5616_HP_CD_PD_MASK | RT5616_HP_CO_MASK |
-				    RT5616_HP_CP_MASK | RT5616_HP_SG_MASK |
-				    RT5616_HP_CB_MASK,
-				    RT5616_SMT_TRIG_DIS | RT5616_HP_CD_PD_EN |
-				    RT5616_HP_CO_DIS | RT5616_HP_CP_PD |
-				    RT5616_HP_SG_EN | RT5616_HP_CB_PD);
-		snd_soc_update_bits(codec, RT5616_PWR_ANLG1,
-				    RT5616_PWR_HP_L | RT5616_PWR_HP_R |
-				    RT5616_PWR_HA, 0);
+		if (!rt5616->depop) {
+			snd_soc_update_bits(codec, RT5616_DEPOP_M1,
+					    RT5616_SMT_TRIG_MASK |
+					    RT5616_HP_CD_PD_MASK | RT5616_HP_CO_MASK |
+					    RT5616_HP_CP_MASK | RT5616_HP_SG_MASK |
+					    RT5616_HP_CB_MASK,
+					    RT5616_SMT_TRIG_DIS | RT5616_HP_CD_PD_EN |
+					    RT5616_HP_CO_DIS | RT5616_HP_CP_PD |
+					    RT5616_HP_SG_EN | RT5616_HP_CB_PD);
+			snd_soc_update_bits(codec, RT5616_PWR_ANLG1,
+					    RT5616_PWR_HP_L | RT5616_PWR_HP_R |
+					    RT5616_PWR_HA, 0);
+		}
 		break;
 	default:
 		return 0;
@@ -601,6 +623,7 @@ static int rt5616_hp_event(struct snd_soc_dapm_widget *w,
 			   struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct rt5616_priv *rt5616 = snd_soc_codec_get_drvdata(codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
@@ -616,8 +639,9 @@ static int rt5616_hp_event(struct snd_soc_dapm_widget *w,
 				    RT5616_CP_FQ_192_KHZ << RT5616_CP_FQ1_SFT |
 				    RT5616_CP_FQ_12_KHZ << RT5616_CP_FQ2_SFT |
 				    RT5616_CP_FQ_192_KHZ << RT5616_CP_FQ3_SFT);
-		snd_soc_write(codec, RT5616_PR_BASE +
-			      RT5616_MAMP_INT_REG2, 0xfc00);
+		snd_soc_update_bits(codec, RT5616_PR_BASE + RT5616_MAMP_INT_REG2,
+				    RT5616_RAMP_VTH_MASK | RT5616_RAMP_VTL_MASK,
+				    RT5616_RAMP_VTH_0P9VDD | RT5616_RAMP_VTL_0P9VDD);
 		snd_soc_update_bits(codec, RT5616_DEPOP_M1,
 				    RT5616_SMT_TRIG_MASK, RT5616_SMT_TRIG_EN);
 		snd_soc_update_bits(codec, RT5616_DEPOP_M1,
@@ -634,8 +658,10 @@ static int rt5616_hp_event(struct snd_soc_dapm_widget *w,
 				    RT5616_HP_R_SMT_MASK, RT5616_HP_SG_DIS |
 				    RT5616_HP_L_SMT_DIS | RT5616_HP_R_SMT_DIS);
 		msleep(20);
-		snd_soc_update_bits(codec, RT5616_HP_CALIB_AMP_DET,
-				    RT5616_HPD_PS_MASK, RT5616_HPD_PS_EN);
+		if (!rt5616->depop)
+			snd_soc_update_bits(codec, RT5616_HP_CALIB_AMP_DET,
+					    RT5616_HPD_PS_MASK, RT5616_HPD_PS_EN);
+
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
@@ -646,8 +672,9 @@ static int rt5616_hp_event(struct snd_soc_dapm_widget *w,
 				    RT5616_CP_FQ_96_KHZ << RT5616_CP_FQ1_SFT |
 				    RT5616_CP_FQ_12_KHZ << RT5616_CP_FQ2_SFT |
 				    RT5616_CP_FQ_96_KHZ << RT5616_CP_FQ3_SFT);
-		snd_soc_write(codec, RT5616_PR_BASE +
-			      RT5616_MAMP_INT_REG2, 0xfc00);
+		snd_soc_update_bits(codec, RT5616_PR_BASE + RT5616_MAMP_INT_REG2,
+				    RT5616_RAMP_VTH_MASK | RT5616_RAMP_VTL_MASK,
+				    RT5616_RAMP_VTH_0P9VDD | RT5616_RAMP_VTL_0P9VDD);
 		snd_soc_update_bits(codec, RT5616_DEPOP_M1,
 				    RT5616_HP_SG_MASK, RT5616_HP_SG_EN);
 		snd_soc_update_bits(codec, RT5616_DEPOP_M1,
@@ -676,21 +703,40 @@ static int rt5616_lout_event(struct snd_soc_dapm_widget *w,
 			     struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct rt5616_priv *rt5616 = snd_soc_codec_get_drvdata(codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5616_STO_DAC_MIXER,
-				    RT5616_DAC_L1_STO_R_VOL_MASK | RT5616_DAC_R1_STO_R_VOL_MASK |
-				    RT5616_DAC_R1_STO_L_VOL_MASK | RT5616_DAC_L1_STO_L_VOL_MASK,
-				    RT5616_DAC_L1_STO_R_VOL_MASK | RT5616_DAC_R1_STO_R_VOL_MASK |
-				    RT5616_DAC_R1_STO_L_VOL_MASK | RT5616_DAC_L1_STO_L_VOL_MASK);
+		if(!rt5616->mode)
+			snd_soc_update_bits(codec, RT5616_STO_DAC_MIXER,
+					    RT5616_DAC_L1_STO_R_VOL_MASK | RT5616_DAC_R1_STO_R_VOL_MASK |
+					    RT5616_DAC_R1_STO_L_VOL_MASK | RT5616_DAC_L1_STO_L_VOL_MASK,
+					    RT5616_DAC_L1_STO_R_GAIN_0dB | RT5616_DAC_R1_STO_R_GAIN_0dB |
+					    RT5616_DAC_R1_STO_L_GAIN_0dB | RT5616_DAC_L1_STO_L_GAIN_0dB);
+		else
+			snd_soc_update_bits(codec, RT5616_STO_DAC_MIXER,
+					    RT5616_DAC_L1_STO_R_VOL_MASK | RT5616_DAC_R1_STO_R_VOL_MASK |
+					    RT5616_DAC_R1_STO_L_VOL_MASK | RT5616_DAC_L1_STO_L_VOL_MASK,
+					    RT5616_DAC_L1_STO_R_VOL_MASK | RT5616_DAC_R1_STO_R_VOL_MASK |
+					    RT5616_DAC_R1_STO_L_VOL_MASK | RT5616_DAC_L1_STO_L_VOL_MASK);
+
 		snd_soc_update_bits(codec, RT5616_PWR_ANLG1,
 				    RT5616_PWR_LM, RT5616_PWR_LM);
 		snd_soc_update_bits(codec, RT5616_LOUT_CTRL1,
 				    RT5616_L_MUTE | RT5616_R_MUTE, 0);
+		/* gpio1 output high */
+		if(rt5616->ampctrl)
+			snd_soc_update_bits(rt5616->codec, RT5616_GPIO_CTRL2,
+					    RT5616_GP1_DR_MASK | RT5616_GP1_OUT_MASK,
+					    RT5616_GP1_DR_OUT | RT5616_GP1_OUT_HI);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
+		/* gpio1 output low */
+		if(rt5616->ampctrl)
+			snd_soc_update_bits(rt5616->codec, RT5616_GPIO_CTRL2,
+					    RT5616_GP1_DR_MASK | RT5616_GP1_OUT_MASK,
+					    RT5616_GP1_DR_OUT | RT5616_GP1_OUT_LO);
 		snd_soc_update_bits(codec, RT5616_STO_DAC_MIXER,
 				    RT5616_DAC_L1_STO_R_VOL_MASK | RT5616_DAC_R1_STO_R_VOL_MASK |
 				    RT5616_DAC_R1_STO_L_VOL_MASK | RT5616_DAC_L1_STO_L_VOL_MASK,
@@ -1270,12 +1316,12 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 
 	case SND_SOC_BIAS_OFF:
 		snd_soc_update_bits(codec, RT5616_D_MISC, RT5616_D_GATE_EN, 0);
-		snd_soc_write(codec, RT5616_PWR_DIG1, 0x0000);
-		snd_soc_write(codec, RT5616_PWR_DIG2, 0x0000);
-		snd_soc_write(codec, RT5616_PWR_VOL, 0x0000);
-		snd_soc_write(codec, RT5616_PWR_MIXER, 0x0000);
-		snd_soc_write(codec, RT5616_PWR_ANLG1, 0x0000);
-		snd_soc_write(codec, RT5616_PWR_ANLG2, 0x0000);
+		if (!rt5616->depop)
+			snd_soc_write(codec, RT5616_PWR_DIG1, 0x0000);
+
+		if (!rt5616->depop)
+			snd_soc_write(codec, RT5616_PWR_ANLG1, 0x0000);
+
 		break;
 
 	default:
@@ -1283,6 +1329,29 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 	}
 
 	return 0;
+}
+
+static void rt5616_enhance_power_stability(struct snd_soc_codec *codec)
+{
+	snd_soc_update_bits(codec, RT5616_DEPOP_M1, RT5616_HP_CP_MASK, RT5616_HP_CP_PD);
+	snd_soc_update_bits(codec, RT5616_PR_BASE + RT5616_CHARGE_PUMP_INT,
+		RT5616_CHARGE_SMALL_MASK | RT5616_CP_DLN_MASK | RT5616_CP_CLK_MASK,
+		RT5616_CHARGE_SMALL | RT5616_CP_DLN_DELAY_2NS | RT5616_CP_CLK_300KHZ);
+	snd_soc_write(codec, RT5616_CHARGE_PUMP, RT5616_LOW_VOL);
+	snd_soc_update_bits(codec, RT5616_DEPOP_M1, RT5616_HP_CP_MASK, RT5616_HP_CP_PU);
+	msleep(50);
+	snd_soc_update_bits(codec, RT5616_PR_BASE + RT5616_CHARGE_PUMP_INT,
+		RT5616_CHARGE_SMALL_MASK | RT5616_CP_DLN_MASK | RT5616_CP_CLK_MASK,
+		RT5616_CHARGE_LARGE | RT5616_CP_DLN_DELAY_2NS | RT5616_CP_CLK_300KHZ);
+	snd_soc_write(codec, RT5616_CHARGE_PUMP, RT5616_MID_VOL);
+	msleep(50);
+	snd_soc_write(codec, RT5616_CHARGE_PUMP, RT5616_HIGH_VOL_1P8);
+	snd_soc_update_bits(codec, RT5616_PR_BASE + RT5616_HP_DCC_INT1,
+		RT5616_CLBR_STAT_MASK | RT5616_CLBR_MODE_MASK | RT5616_AUTO_SET1_MASK |
+		RT5616_AUTO_SET2_MASK, RT5616_CLBR_STAT_BUSY | RT5616_CLBR_HP_DAC |
+		RT5616_AUTO_SET1_10P5 | RT5616_AUTO_SET2_1P31);
+	snd_soc_update_bits(codec, RT5616_GPIO_CTRL2, RT5616_GP1_DR_MASK |
+		RT5616_GP1_P_MASK, RT5616_GP1_DR_OUT | RT5616_GP1_P_NOR );
 }
 
 static int rt5616_probe(struct snd_soc_codec *codec)
@@ -1293,7 +1362,7 @@ static int rt5616_probe(struct snd_soc_codec *codec)
 	rt5616->mclk = devm_clk_get(codec->dev, "mclk");
 	if (PTR_ERR(rt5616->mclk) == -EPROBE_DEFER)
 		return -EPROBE_DEFER;
-
+	rt5616_enhance_power_stability(codec);
 #if defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
 	if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT) {
 		rt5616_set_bias_level(codec, SND_SOC_BIAS_OFF);
@@ -1423,6 +1492,18 @@ static void rt5616_parse_dt_mode(struct rt5616_priv *rt5616, struct device *dev)
 		rt5616->mode = 0;
 		dev_err(dev, "Failed to parse dts hw_mode\n");
 	}
+
+	ret = of_property_read_u32(dev->of_node, "depop_mode", &rt5616->depop);
+	if (ret < 0) {
+		rt5616->depop = 0;
+		dev_err(dev, "Failed to parse dts depop_mode\n");
+	}
+
+	ret = of_property_read_u32(dev->of_node, "amp_control", &rt5616->ampctrl);
+	if (ret < 0) {
+		rt5616->ampctrl = 0;
+		dev_err(dev, "Failed to parse dts amp ctrl mode\n");
+	}
 }
 
 static int rt5616_i2c_probe(struct i2c_client *i2c,
@@ -1486,6 +1567,12 @@ static int rt5616_i2c_probe(struct i2c_client *i2c,
 				   RT5616_EN_DFO, RT5616_EN_DFO);
 
 	dev_dbg(&i2c->dev, "Apply rt5616 hw_mode: %d\n", rt5616->mode);
+
+	if (rt5616->depop)
+		dev_dbg(&i2c->dev, "Apply rt5616 depop_mode: %d\n", rt5616->depop);
+
+	if (rt5616->ampctrl)
+		dev_dbg(&i2c->dev, "Apply rt5616 amp ctrl mode: %d\n", rt5616->ampctrl);
 
 	return snd_soc_register_codec(&i2c->dev, &soc_codec_dev_rt5616,
 				      rt5616_dai, ARRAY_SIZE(rt5616_dai));

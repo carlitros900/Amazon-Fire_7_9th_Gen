@@ -276,6 +276,7 @@
 #define MT9P017MIPI_SENSOR_ID                   0x4800
 #define MT9T113MIPI_SENSOR_ID                   0x4680
 /* GC */
+#define GC02M1MIPI_CXT_REAR_SENSOR_ID           0x02e0
 #define GC2375_SENSOR_ID                        0x2375
 #define GC2375MIPI_CXT_REAR_SENSOR_ID           0x2378
 #define GC2375MIPI_CXT_FRONT_SENSOR_ID          0x2377
@@ -456,6 +457,7 @@
 #define SENSOR_DRVNAME_MT9V113_YUV              "mt9v113_yuv"
 #define SENSOR_DRVNAME_MT9T113_MIPI_YUV         "mt9t113_mipi_yuv"
 /* GC */
+#define SENSOR_DRVNAME_GC02M1MIPI_RAW_CXT_REAR  "gc02m1mipi_raw_cxt_rear"
 #define SENSOR_DRVNAME_GC2375_MIPI_RAW          "gc2375mipiraw"
 #define SENSOR_DRVNAME_GC2375MIPI_RAW_CXT_REAR  "gc2375mipi_raw_cxt_rear"
 #define SENSOR_DRVNAME_GC2375MIPI_RAW_CXT_FRONT "gc2375mipi_raw_cxt_front"

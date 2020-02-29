@@ -2615,10 +2615,11 @@ static int musb_urb_enqueue(struct usb_hcd *hcd, struct urb *urb,
 
 #ifdef MUSB_QMU_SUPPORT_HOST
 	if (mtk_host_qmu_concurrent && qh && qh->is_use_qmu && (ret == 0)) {
-		mtk_kick_CmdQ(musb,
-			      (epd->
-			       bEndpointAddress & USB_ENDPOINT_DIR_MASK) ? 1 :
-			      0, qh, urb);
+		ret = mtk_kick_CmdQ(musb,
+				(epd->bEndpointAddress & USB_ENDPOINT_DIR_MASK)
+				? 1 : 0, qh, urb);
+		if (ret)
+			usb_hcd_unlink_urb_from_ep(hcd, urb);
 		spin_unlock_irqrestore(&musb->lock, flags);
 		return ret;
 	}

@@ -2964,7 +2964,7 @@ static int dtm_cpu_set_cur_state(struct thermal_cooling_device *cdev,
 		if ((!strcmp(cdev->type, &cooler_name[i * 20])) &&
 			cl_dev_state[i] != state) {
 			snprintf(buf, TSCPU_METRICS_STR_LEN,
-				"%s:cpumonitor=1;CT;1,cooler=%s;DV;1,state=%ld;CT;1:NR",
+				"%s:cpumonitor_%s_cooler_state=%ld;CT;1:NR",
 				PREFIX, cdev->type, state);
 			log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
 		}
@@ -3039,8 +3039,16 @@ static int adp_cpu_get_max_state(struct thermal_cooling_device *cdev,
 static int adp_cpu_get_cur_state(struct thermal_cooling_device *cdev,
 	unsigned long *state)
 {
+	int cooler_index = (cdev->type[13] - '0');
+
+	if (cooler_index >= MAX_CPT_ADAPTIVE_COOLERS
+		|| cooler_index < 0) {
+		pr_err("%s: adaptive cooler index ERROR \n", __func__);
+		return -EINVAL;
+	}
+
 	/* tscpu_dprintk("adp_cpu_get_cur_state\n"); */
-	*state = cl_dev_adp_cpu_state[(cdev->type[13] - '0')];
+	*state = cl_dev_adp_cpu_state[cooler_index];
 	/* *state = cl_dev_adp_cpu_state; */
 	return 0;
 }
@@ -3049,8 +3057,26 @@ static int adp_cpu_set_cur_state(struct thermal_cooling_device *cdev,
 	unsigned long state)
 {
 	int ttj = 117000;
+	int cooler_index = (cdev->type[13] - '0');
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	char buf[TSCPU_METRICS_STR_LEN];
+#endif
 
-	cl_dev_adp_cpu_state[(cdev->type[13] - '0')] = state;
+	if (cooler_index >= MAX_CPT_ADAPTIVE_COOLERS
+		|| cooler_index < 0) {
+		pr_err("%s: adaptive cooler index ERROR \n", __func__);
+		return -EINVAL;
+	}
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	if (cl_dev_adp_cpu_state[cooler_index] != state) {
+		snprintf(buf, TSCPU_METRICS_STR_LEN,
+			"%s:cpumonitor_%s_cooler_state=%ld;CT;1:NR",
+			PREFIX, cdev->type, state);
+		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
+	}
+#endif
+
+	cl_dev_adp_cpu_state[cooler_index] = state;
 	/* TODO: no exit point can be obtained in mtk_ts_cpu.c */
 	ttj = decide_ttj();
 
@@ -3058,7 +3084,7 @@ static int adp_cpu_set_cur_state(struct thermal_cooling_device *cdev,
 	 * (cdev->type[13] - '0'), state, ttj);
 	 */
 
-	if (active_adp_cooler == (int)(cdev->type[13] - '0')) {
+	if (active_adp_cooler == cooler_index) {
 		/* = (NULL == mtk_thermal_get_gpu_loading_fp) ?
 		 * 0 : mtk_thermal_get_gpu_loading_fp();
 		 */

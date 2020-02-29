@@ -246,6 +246,7 @@ static signed short mtkts_bts_thermistor_conver_temp(signed int Res)
 								(RES1 - RES2);
 	}
 
+	pr_debug("Temperature is TAP_Value=%d\n", TAP_Value);
 	return TAP_Value;
 }
 
@@ -253,9 +254,12 @@ static signed short mtkts_bts_thermistor_conver_temp(signed int Res)
 /*Volt to Temp formula same with 6589*/
 static signed short mtk_ts_bts_volt_to_temp(int index, unsigned int dwVolt)
 {
-	signed int TRes;
-	signed int dwVCriAP = 0;
-	signed int BTS_TMP = -100;
+	s32 TRes;
+	s64 dwVCriAP = 0;
+	s32 BTS_TMP = -100;
+	s32 critical_low = bts_channel_param[index].g_TAP_over_critical_low;
+	s64 up_voltage = bts_channel_param[index].g_RAP_pull_up_voltage;
+	s32 up_R = bts_channel_param[index].g_RAP_pull_up_R;
 
 	/* SW workaround----------------------------------------------------- */
 	/* dwVCriAP = (TAP_OVER_CRITICAL_LOW * 1800) /
@@ -264,11 +268,9 @@ static signed short mtk_ts_bts_volt_to_temp(int index, unsigned int dwVolt)
 	/* dwVCriAP = (TAP_OVER_CRITICAL_LOW * RAP_PULL_UP_VOLT) /
 	 * (TAP_OVER_CRITICAL_LOW + RAP_PULL_UP_R);
 	 */
-	dwVCriAP =
-	    (bts_channel_param[index].g_TAP_over_critical_low *
-		bts_channel_param[index].g_RAP_pull_up_voltage) /
-			(bts_channel_param[index].g_TAP_over_critical_low +
-		bts_channel_param[index].g_RAP_pull_up_R);
+	dwVCriAP = div_s64(critical_low * up_voltage, critical_low + up_R);
+	pr_debug("index=%d, dwVolt=%d, critical_low=%d, up_R=%d, up_voltage=%lld, dwVCriAP=%lld\n",
+		index, dwVolt, critical_low, up_R, up_voltage, dwVCriAP);
 
 	if (dwVolt > dwVCriAP) {
 		TRes = bts_channel_param[index].g_TAP_over_critical_low;
@@ -279,7 +281,7 @@ static signed short mtk_ts_bts_volt_to_temp(int index, unsigned int dwVolt)
 		(bts_channel_param[index].g_RAP_pull_up_voltage - dwVolt);
 	}
 	/* ------------------------------------------------------------------ */
-	mtkts_bts_dprintk("index=%d, dwVCriAP=%d, TRes=%d\n",
+	mtkts_bts_dprintk("index=%d, dwVCriAP=%lld, TRes=%d\n",
 		index, dwVCriAP, TRes);
 	bts_channel_param[index].g_AP_TemperatureR = TRes;
 #ifdef CONFIG_THERMAL_abc123
@@ -784,6 +786,8 @@ void mtkts_bts_prepare_table(int table_num)
 		ntc_tbl_size = sizeof(BTS_Temperature_Table4);
 		break;
 	}
+	pr_debug("Table matched : table_num=%d, table_rows=%d\n",
+		table_num, (int)(ntc_tbl_size / sizeof(struct BTS_TEMPERATURE)));
 }
 #else
 void mtkts_bts_prepare_table(int table_num)

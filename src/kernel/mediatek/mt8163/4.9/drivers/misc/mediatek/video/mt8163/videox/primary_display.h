@@ -28,7 +28,6 @@ extern unsigned int gPrefetchControl;
 extern unsigned int gDisableSODIForTriggerLoop;
 extern bool is_ipoh_bootup;
 extern unsigned int isAEEEnabled;
-extern unsigned int free_fb_buf;
 extern unsigned int gEnableMutexRisingEdge;
 extern unsigned int gDumpConfigCMD;
 extern unsigned int gEnableOVLStatusCheck;
@@ -434,11 +433,28 @@ primary_display_path_lock(const char *caller);
 void primary_display_path_unlock(const char *caller);
 int primary_display_switch_wdma_dump(int on);
 int primary_display_release_fence_fake(void);
+
+void primary_display_update_present_fence(unsigned int fence_idx);
+
+extern int ddp_dsi_read_lcm_test_cmdq(enum DISP_MODULE_ENUM module,
+	cmdqBackupSlotHandle *read_Slot,
+	struct cmdqRecStruct *cmdq_trigger_handle,
+	struct ddp_lcm_read_cmd_table *read_table);
+extern int do_lcm_vdo_read(struct ddp_lcm_read_cmd_table *read_table);
+
 #ifdef CONFIG_MTK_SEGMENT_TEST
 int primary_display_check_test(void);
 #endif
 int primary_display_cmdq_set_reg(unsigned int addr, unsigned int val);
 #ifdef CONFIG_OF
 extern unsigned int vramsize;
+#endif
+
+#ifdef CONFIG_FREE_FB_BUFFER
+struct s_free_fb {
+	bool is_fb_freed;
+	cmdqBackupSlotHandle ovl_config_fb_cnt;
+	struct mutex fb_free_lock;
+};
 #endif
 #endif

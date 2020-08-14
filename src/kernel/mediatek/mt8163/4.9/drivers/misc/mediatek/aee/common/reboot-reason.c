@@ -115,7 +115,10 @@ static ssize_t powerup_reason_show(struct kobject *kobj,
 		if (br_ptr_e != 0) {
 			strncpy(boot_reason, br_ptr + 23,
 					br_ptr_e - br_ptr - 23);
-			boot_reason[br_ptr_e - br_ptr - 23] = '\0';
+			if(br_ptr_e - br_ptr - 23 < 0)
+				boot_reason[0] = '\0';
+			else
+				boot_reason[br_ptr_e - br_ptr - 23] = '\0';
 		}
 #ifdef CONFIG_MTK_RAM_CONSOLE
 		if (aee_rr_last_fiq_step() != 0)
@@ -277,7 +280,9 @@ inline void aee_print_bt(struct pt_regs *regs)
 	cur_frame.fp = regs->reg_fp;
 	cur_frame.pc = regs->reg_pc;
 	cur_frame.sp = regs->reg_sp;
+#ifndef CONFIG_ARM64
 	cur_frame.lr = regs->reg_lr;
+#endif
 	aee_nested_printf("\n[<%p>] %pS\n", (void *)cur_frame.pc,
 			(void *)cur_frame.pc);
 	aee_nested_printf("[<%p>] %pS\n", (void *)regs->reg_lr,
@@ -370,11 +375,14 @@ static const char *get_timestamp_string(char *buf, int bufsize)
 {
 	u64 ts;
 	unsigned long rem_nsec;
+	int n;
 
 	ts = local_clock();
 	rem_nsec = do_div(ts, 1000000000);
-	snprintf(buf, bufsize, "[%5lu.%06lu]",
+	n = snprintf(buf, bufsize, "[%5lu.%06lu]",
 		       (unsigned long)ts, rem_nsec / 1000);
+	if(n < 0)
+		strncpy(buf, "get_timestamp unknown error", 28);
 	return buf;
 }
 

@@ -313,9 +313,11 @@ static long fbconfig_ioctl(struct file *file, unsigned int cmd,
 								   : 0;
 	}
 	case DRIVER_IC_CONFIG: {
-
 		struct CONFIG_RECORD_LIST *record_tmp_list =
 			kmalloc(sizeof(*record_tmp_list), GFP_KERNEL);
+
+		if (!record_tmp_list)
+			return -ENOMEM;
 
 		if (copy_from_user(&record_tmp_list->record, (void __user *)arg,
 				   sizeof(struct CONFIG_RECORD))) {
@@ -581,6 +583,13 @@ static long fbconfig_ioctl(struct file *file, unsigned int cmd,
 				__LINE__);
 			return -EFAULT;
 		}
+
+		if (esd_para.para_num <= 0 || esd_para.para_num > 100) {
+			pr_debug("fbconfig=>LCM_GET_ESD para_num:%d < 0\n",
+				esd_para.para_num);
+			return -EINVAL;
+		}
+
 		buffer = kzalloc(esd_para.para_num + 6, GFP_KERNEL);
 		if (!buffer)
 			return -ENOMEM;
@@ -595,8 +604,6 @@ static long fbconfig_ioctl(struct file *file, unsigned int cmd,
 				   esd_para.para_num);
 		kfree(buffer);
 		return ret;
-
-		return 0;
 	}
 	case TE_SET_ENABLE: {
 		uint32_t te_enable = 0;

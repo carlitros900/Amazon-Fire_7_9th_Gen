@@ -311,22 +311,22 @@ static int rt5616_amp_gpio_init(struct device *dev)
 
 	audio_amp_gpio = of_get_named_gpio(dev->of_node, "realtek,amp-gpio", 0);
 	if (!gpio_is_valid(audio_amp_gpio)) {
-		pr_err("%s Audio DCA failed to get amp-gpio\n", __func__);
+		printk(KERN_ERR "%s Audio DCA failed to get amp-gpio\n", __func__);
 		return -1;
 	}
 
 	ret = gpio_request(audio_amp_gpio, "amp_gpio");
 	if(ret){
-		pr_err("gpio %d request failed!,ret:%d\n", audio_amp_gpio, ret);
+		printk("gpio %d request failed!,ret:%d\n", audio_amp_gpio, ret);
 		goto err_gpio;
 	}
 	ret = gpio_direction_output(audio_amp_gpio, 1);
 	if(ret){
-		pr_err("gpio %d unable to set as output!\n", audio_amp_gpio);
+		printk("gpio %d unable to set as output!\n", audio_amp_gpio);
 		goto err_free_gpio;
 	}
 
-	pr_info("GPIO pin requested ok, audio_amp_gpio = %s\n", gpio_get_value(audio_amp_gpio)? "H":"L");
+	printk("GPIO pin requested ok, audio_amp_gpio = %s\n", gpio_get_value(audio_amp_gpio)? "H":"L");
 	return 0;
 err_free_gpio:
 	if (gpio_is_valid(audio_amp_gpio))
@@ -567,7 +567,7 @@ static int rt5616_charge_pump_event(struct snd_soc_dapm_widget *w,
 				    RT5616_PWR_HP_L | RT5616_PWR_HP_R |
 				    RT5616_PWR_HA, RT5616_PWR_HP_L |
 				    RT5616_PWR_HP_R | RT5616_PWR_HA);
-		msleep(25);
+		msleep(50);
 		snd_soc_update_bits(codec, RT5616_PWR_ANLG1,
 				    RT5616_PWR_FV1 | RT5616_PWR_FV2,
 				    RT5616_PWR_FV1 | RT5616_PWR_FV2);
@@ -652,7 +652,7 @@ static int rt5616_hp_event(struct snd_soc_dapm_widget *w,
 				    RT5616_HP_L_SMT_EN | RT5616_HP_R_SMT_EN);
 		snd_soc_update_bits(codec, RT5616_HP_VOL,
 				    RT5616_L_MUTE | RT5616_R_MUTE, 0);
-		msleep(50);
+		msleep(100);
 		snd_soc_update_bits(codec, RT5616_DEPOP_M1,
 				    RT5616_HP_SG_MASK | RT5616_HP_L_SMT_MASK |
 				    RT5616_HP_R_SMT_MASK, RT5616_HP_SG_DIS |
@@ -685,7 +685,7 @@ static int rt5616_hp_event(struct snd_soc_dapm_widget *w,
 				    RT5616_HP_L_SMT_EN | RT5616_HP_R_SMT_EN);
 		snd_soc_update_bits(codec, RT5616_HP_CALIB_AMP_DET,
 				    RT5616_HPD_PS_MASK, RT5616_HPD_PS_DIS);
-		msleep(50);
+		msleep(90);
 		snd_soc_update_bits(codec, RT5616_HP_VOL,
 				    RT5616_L_MUTE | RT5616_R_MUTE,
 				    RT5616_L_MUTE | RT5616_R_MUTE);
@@ -744,6 +744,8 @@ static int rt5616_lout_event(struct snd_soc_dapm_widget *w,
 		snd_soc_update_bits(codec, RT5616_LOUT_CTRL1,
 				    RT5616_L_MUTE | RT5616_R_MUTE,
 				    RT5616_L_MUTE | RT5616_R_MUTE);
+		snd_soc_update_bits(codec, RT5616_PWR_ANLG1,
+				    RT5616_PWR_LM, 0);
 		break;
 
 	default:
@@ -893,19 +895,19 @@ static const struct snd_soc_dapm_widget rt5616_dapm_widgets[] = {
 			   ARRAY_SIZE(rt5616_sto_dac_r_mix)),
 
 	/* DACs */
-	SND_SOC_DAPM_DAC("DAC L1", NULL, SND_SOC_NOPM,
+	SND_SOC_DAPM_DAC("DAC L1", NULL, RT5616_PWR_DIG1,
 			 RT5616_PWR_DAC_L1_BIT, 0),
-	SND_SOC_DAPM_DAC("DAC R1", NULL, SND_SOC_NOPM,
+	SND_SOC_DAPM_DAC("DAC R1", NULL, RT5616_PWR_DIG1,
 			 RT5616_PWR_DAC_R1_BIT, 0),
 	/* OUT Mixer */
-	SND_SOC_DAPM_MIXER("OUT MIXL", SND_SOC_NOPM, RT5616_PWR_OM_L_BIT,
+	SND_SOC_DAPM_MIXER("OUT MIXL", RT5616_PWR_MIXER, RT5616_PWR_OM_L_BIT,
 			   0, rt5616_out_l_mix, ARRAY_SIZE(rt5616_out_l_mix)),
-	SND_SOC_DAPM_MIXER("OUT MIXR", SND_SOC_NOPM, RT5616_PWR_OM_R_BIT,
+	SND_SOC_DAPM_MIXER("OUT MIXR", RT5616_PWR_MIXER, RT5616_PWR_OM_R_BIT,
 			   0, rt5616_out_r_mix, ARRAY_SIZE(rt5616_out_r_mix)),
 	/* Output Volume */
-	SND_SOC_DAPM_PGA("OUTVOL L", SND_SOC_NOPM,
+	SND_SOC_DAPM_PGA("OUTVOL L", RT5616_PWR_VOL,
 			 RT5616_PWR_OV_L_BIT, 0, NULL, 0),
-	SND_SOC_DAPM_PGA("OUTVOL R", SND_SOC_NOPM,
+	SND_SOC_DAPM_PGA("OUTVOL R", RT5616_PWR_VOL,
 			 RT5616_PWR_OV_R_BIT, 0, NULL, 0),
 	SND_SOC_DAPM_PGA("HPOVOL L", RT5616_PWR_VOL,
 			 RT5616_PWR_HV_L_BIT, 0, NULL, 0),
@@ -1307,12 +1309,13 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 					    RT5616_PWR_FV1 | RT5616_PWR_FV2,
 					    RT5616_PWR_FV1 | RT5616_PWR_FV2);
 			snd_soc_update_bits(codec, RT5616_D_MISC,
-					    RT5616_D_GATE_EN | RT5616_CLK_DET_EN,
-					    RT5616_D_GATE_EN | RT5616_CLK_DET_EN);
+					    RT5616_D_GATE_EN,
+					    RT5616_D_GATE_EN);
 		}
 		break;
 
 	case SND_SOC_BIAS_OFF:
+		snd_soc_update_bits(codec, RT5616_D_MISC, RT5616_D_GATE_EN, 0);
 		if (!rt5616->depop)
 			snd_soc_write(codec, RT5616_PWR_DIG1, 0x0000);
 
@@ -1347,19 +1350,11 @@ static void rt5616_enhance_power_stability(struct snd_soc_codec *codec)
 		RT5616_CLBR_STAT_MASK | RT5616_CLBR_MODE_MASK | RT5616_AUTO_SET1_MASK |
 		RT5616_AUTO_SET2_MASK, RT5616_CLBR_STAT_BUSY | RT5616_CLBR_HP_DAC |
 		RT5616_AUTO_SET1_10P5 | RT5616_AUTO_SET2_1P31);
-	snd_soc_update_bits(codec, RT5616_GPIO_CTRL2, RT5616_GP1_DR_MASK |
-		RT5616_GP1_P_MASK, RT5616_GP1_DR_OUT | RT5616_GP1_P_NOR );
 }
 
 static int rt5616_probe(struct snd_soc_codec *codec)
 {
 	struct rt5616_priv *rt5616 = snd_soc_codec_get_drvdata(codec);
-	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
-
-	if (!dapm) {
-		pr_err("%s failed to get dapm\n", __func__);
-		return -EINVAL;
-	}
 
 	/* Check if MCLK provided */
 	rt5616->mclk = devm_clk_get(codec->dev, "mclk");
@@ -1373,22 +1368,12 @@ static int rt5616_probe(struct snd_soc_codec *codec)
 			if (gpio_direction_output(audio_amp_gpio, 1) == 0)
 				gpio_set_value(audio_amp_gpio, 1);
 			else
-				pr_warn("gpio %d for kpoc unable to set as output!\n", audio_amp_gpio);
+				printk("gpio %d for kpoc unable to set as output!\n", audio_amp_gpio);
 		} else {
-			pr_warn("gpio %d for kpoc request failed!\n", audio_amp_gpio);
+			printk("gpio %d for kpoc request failed!\n", audio_amp_gpio);
 		}
 	}
 #endif
-	snd_soc_dapm_force_enable_pin(dapm, "PLL1");
-	snd_soc_dapm_force_enable_pin(dapm, "I2S1");
-	snd_soc_dapm_force_enable_pin(dapm, "Stero1 DAC Power");
-	snd_soc_dapm_sync(dapm);
-	snd_soc_update_bits(codec, RT5616_PWR_VOL, RT5616_PWR_OV_L |
-		RT5616_PWR_OV_R, RT5616_PWR_OV_L | RT5616_PWR_OV_R );
-	snd_soc_update_bits(codec, RT5616_PWR_DIG1, RT5616_PWR_DAC_L1 |
-		RT5616_PWR_DAC_R1, RT5616_PWR_DAC_L1 | RT5616_PWR_DAC_R1 );
-	snd_soc_update_bits(codec, RT5616_PWR_MIXER, RT5616_PWR_OM_L |
-		RT5616_PWR_OM_R, RT5616_PWR_OM_L | RT5616_PWR_OM_R );
 
 	rt5616->codec = codec;
 
@@ -1538,7 +1523,7 @@ static int rt5616_i2c_probe(struct i2c_client *i2c,
 #if defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
 	ret = rt5616_amp_gpio_init(&i2c->dev);
 	if(ret)
-		pr_err("RT5616 amp_gpio request failed!\n");
+		printk("RT5616 amp_gpio request failed!\n");
 #endif
 
 	rt5616->regmap = devm_regmap_init_i2c(i2c, &rt5616_regmap);

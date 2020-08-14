@@ -305,6 +305,15 @@ extern struct LCM_DRIVER jd936x_wxga_dsi_vdo_abc123_st_boe_lcm_drv;
 extern struct LCM_DRIVER jd936x_wxga_dsi_vdo_abc123_st_proto_inx_lcm_drv;
 extern struct LCM_DRIVER jd936x_wxga_dsi_vdo_abc123_st_proto_kd_inx_lcm_drv;
 extern struct LCM_DRIVER jd936x_wxga_dsi_vdo_abc123_st_proto_kd_hsd_lcm_drv;
+extern struct LCM_DRIVER nt35521_wxga_dsi_vdo_abc123_kd_lcm_drv;
+extern struct LCM_DRIVER jd9366_wxga_dsi_vdo_abc123_fiti_tpv_lcm_drv;
+extern struct LCM_DRIVER jd9367_wxga_dsi_vdo_abc123_fiti_kd_lcm_drv;
+extern struct LCM_DRIVER jd9365_wxga_dsi_vdo_abc123_fiti_kd_hsd_lcm_drv;
+extern struct LCM_DRIVER jd9367_wxga_dsi_vdo_abc123_fiti_inx_lcm_drv;
+extern struct LCM_DRIVER jd9366_wxga_dsi_vdo_abc123_fiti_txd_lcm_drv;
+extern struct LCM_DRIVER jd9366_wxga_dsi_vdo_abc123_fiti_starry_lcm_drv;
+extern struct LCM_DRIVER jd9366_wxga_dsi_vdo_abc123_fiti_kd_lcm_drv;
+
 #ifdef BUILD_LK
 extern void mdelay(unsigned long msec);
 #endif

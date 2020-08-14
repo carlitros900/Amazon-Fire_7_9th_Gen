@@ -543,7 +543,7 @@ static int mtk_pcm_copy(struct snd_pcm_substream *substream,
 				Afe_Block->u4BufferSize,
 				Afe_Block->u4DataRemained);
 			} else {
-				if (copy_from_user((
+				if (copy_from_user_toio((
 					Afe_Block->pucVirtBufAddr +
 					Afe_WriteIdx_tmp),
 					data_w_ptr, copy_size)) {
@@ -586,7 +586,7 @@ static int mtk_pcm_copy(struct snd_pcm_substream *substream,
 				Afe_Block->pucVirtBufAddr + Afe_WriteIdx_tmp,
 				data_w_ptr, size_1);
 
-				if ((copy_from_user(
+				if ((copy_from_user_toio(
 					(Afe_Block->pucVirtBufAddr +
 					Afe_WriteIdx_tmp),
 					data_w_ptr, (unsigned int)size_1))) {
@@ -618,7 +618,7 @@ static int mtk_pcm_copy(struct snd_pcm_substream *substream,
 				data_w_ptr + size_1,
 				(unsigned int)size_2);
 
-				if ((copy_from_user((Afe_Block->pucVirtBufAddr +
+				if ((copy_from_user_toio((Afe_Block->pucVirtBufAddr +
 					 Afe_WriteIdx_tmp),
 					(data_w_ptr + size_1), size_2))) {
 					pr_debug("write Fail 2\n");

@@ -107,6 +107,8 @@ struct gadget_info {
 	struct work_struct work;
 	struct device *dev;
 #endif
+	struct semaphore  sema_lock;
+
 };
 
 static inline struct gadget_info *to_gadget_info(struct config_item *item)
@@ -1548,6 +1550,9 @@ static void configfs_composite_unbind(struct usb_gadget *gadget)
 	cdev = get_gadget_data(gadget);
 	gi = container_of(cdev, struct gadget_info, cdev);
 
+	if (down_interruptible(&gi->sema_lock))
+		pr_info("%s: wait setup done\n", __func__);
+
 	kfree(otg_desc[0]);
 	otg_desc[0] = NULL;
 	purge_configs_funcs(gi);
@@ -1555,6 +1560,7 @@ static void configfs_composite_unbind(struct usb_gadget *gadget)
 	usb_ep_autoconfig_reset(cdev->gadget);
 	cdev->gadget = NULL;
 	set_gadget_data(gadget, NULL);
+	up(&gi->sema_lock);
 }
 
 #ifdef CONFIG_USB_CONFIGFS_UEVENT
@@ -1566,6 +1572,8 @@ static int android_setup(struct usb_gadget *gadget,
 	struct gadget_info *gi = container_of(cdev, struct gadget_info, cdev);
 	int value = -EOPNOTSUPP;
 	struct usb_function_instance *fi;
+
+	down(&gi->sema_lock);
 
 	spin_lock_irqsave(&cdev->lock, flags);
 	if (!gi->connected) {
@@ -1595,6 +1603,8 @@ static int android_setup(struct usb_gadget *gadget,
 		schedule_work(&gi->work);
 	}
 	spin_unlock_irqrestore(&cdev->lock, flags);
+
+	up(&gi->sema_lock);
 
 	return value;
 }
@@ -1851,6 +1861,7 @@ static struct config_group *gadgets_make(
 	gi->composite.max_speed = USB_SPEED_SUPER;
 
 	mutex_init(&gi->lock);
+	sema_init(&gi->sema_lock, 1);
 	INIT_LIST_HEAD(&gi->string_list);
 	INIT_LIST_HEAD(&gi->available_func);
 

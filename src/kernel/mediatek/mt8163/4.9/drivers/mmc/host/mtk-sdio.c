@@ -38,7 +38,6 @@
 
 #include <mt-plat/mtk_boot_common.h>
 #include <mtk-sdio.h>
-#include <linux/mmc/sdio_func.h>
 
 static void sdr_set_bits(void __iomem *reg, u32 bs)
 {
@@ -959,36 +958,31 @@ static irqreturn_t msdc_irq(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-void sdio_set_card_clkpd(int on, struct sdio_func *func)
+static struct msdc_host *sdio_host;
+
+static void sdio_status_notify_cb(int card_present, void *dev_id)
 {
-	u32 value;
-	struct mmc_host *mmc;
-	struct msdc_host *sdio_host;
+	struct msdc_host *host = (struct msdc_host *)dev_id;
 
-	if (!func || !func->card)
-		return;
+	pr_info("%s: card_present %d\n", mmc_hostname(host->mmc), card_present);
 
-	mmc = func->card->host;
-	sdio_host = mmc_priv(mmc);
-
-	if (!sdio_host)
-		return;
-
-	if (!on) {
-		sdr_clr_bits(sdio_host->base + MSDC_CFG,
-				MSDC_CFG_CKPDN);
-		sdr_get_field(sdio_host->base + MSDC_CFG,
-				MSDC_CFG_CKPDN, &value);
-		pr_info("sdio host MSDC_CLK_CKPDN value: %d", value);
-	} else {
-		sdr_set_bits(sdio_host->base + MSDC_CFG,
-				MSDC_CFG_CKPDN);
-		sdr_get_field(sdio_host->base + MSDC_CFG,
-				MSDC_CFG_CKPDN, &value);
-		pr_info("sdio host MSDC_CLK_CKPDN value: %d", value);
+	if (card_present == 1) {
+		host->mmc->rescan_disable = 0;
+		mmc_detect_change(host->mmc, 0);
+	} else if (card_present == 0) {
+		host->mmc->detect_change = 0;
+		host->mmc->rescan_disable = 1;
 	}
 }
-EXPORT_SYMBOL(sdio_set_card_clkpd);
+
+void sdio_card_detect(int card_present)
+{
+	pr_info("%s: enter present:%d\n", __func__, card_present);
+	if (sdio_host)
+		sdio_status_notify_cb(card_present, sdio_host);
+
+}
+EXPORT_SYMBOL(sdio_card_detect);
 
 static void msdc_init_hw(struct msdc_host *host)
 {
@@ -3710,6 +3704,7 @@ static int msdc_drv_probe(struct platform_device *pdev)
 	pr_info("%s: add new sdio_host %s, index=%d, ret=%d\n", __func__,
 		mmc_hostname(host->mmc), mmc->index, ret);
 
+	sdio_host = host;
 	if (ret)
 		goto end;
 

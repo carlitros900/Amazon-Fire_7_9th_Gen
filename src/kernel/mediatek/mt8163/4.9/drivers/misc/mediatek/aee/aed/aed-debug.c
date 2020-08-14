@@ -155,6 +155,7 @@ static ssize_t proc_generate_wdt_write(struct file *file,
 	unsigned int i = 0;
 	char msg[4];
 	unsigned char name[20] = { 0 };
+	int n = 0;
 
 	if ((size < 2) || (size > sizeof(msg))) {
 		pr_notice("\n size = %zx\n", size);
@@ -201,7 +202,9 @@ static ssize_t proc_generate_wdt_write(struct file *file,
 
 	/* create kernel threads and bind on every cpu */
 	for (i = 0; i < nr_cpu_ids; i++) {
-		sprintf(name, "wd-test-%d", i);
+		n = sprintf(name, "wd-test-%d", i);
+		if(n < 0)
+			strncpy(name, "unknown error", 14);
 		pr_notice("[WDK]thread name: %s\n", name);
 		wk_tsk[i] = kthread_create(kwdt_thread_test, NULL, name);
 		if (IS_ERR(wk_tsk[i])) {
@@ -322,6 +325,11 @@ static noinline void double_free(void)
 {
 	char *p = kmalloc(32, GFP_KERNEL);
 	int i;
+
+	if(p == NULL) {
+		pr_info("kmalloc fail\n");
+		return;
+	}
 
 	pr_info("test case : double free\n");
 	for (i = 0; i < 32; i++)
@@ -538,6 +546,7 @@ static ssize_t proc_generate_md32_read(struct file *file, char __user *buf,
 	char buffer[BUFSIZE];
 	int i;
 	char *ptr;
+	int n;
 
 	if ((*ppos)++)
 		return 0;
@@ -547,7 +556,9 @@ static ssize_t proc_generate_md32_read(struct file *file, char __user *buf,
 	for (i = 0; i < TEST_MD32_PHY_SIZE; i++)
 		ptr[i] = (i % 26) + 'a';
 
-	sprintf(buffer, "MD32 EE log here\n");
+	n = sprintf(buffer, "MD32 EE log here\n");
+	if(n < 0)
+		strncpy(buffer, "unknown error", 14);
 	aed_md32_exception((int *)buffer, (int)sizeof(buffer), (int *)ptr,
 			TEST_MD32_PHY_SIZE, __FILE__);
 	kfree(ptr);
@@ -570,6 +581,7 @@ static ssize_t proc_generate_scp_read(struct file *file,
 	char buffer[BUFSIZE];
 	int i;
 	char *ptr;
+	int n;
 
 	if ((*ppos)++)
 		return 0;
@@ -579,7 +591,9 @@ static ssize_t proc_generate_scp_read(struct file *file,
 	for (i = 0; i < TEST_SCP_PHY_SIZE; i++)
 		ptr[i] = (i % 26) + 'a';
 
-	sprintf(buffer, "SCP EE log here\n");
+	n = sprintf(buffer, "SCP EE log here\n");
+	if(n < 0)
+		strncpy(buffer, "unknown error", 14);
 	aed_scp_exception((int *)buffer, (int)sizeof(buffer), (int *)ptr,
 						TEST_SCP_PHY_SIZE, __FILE__);
 	kfree(ptr);
@@ -602,6 +616,10 @@ static ssize_t proc_generate_kernel_notify_read(struct file *file,
 	char buffer[BUFSIZE];
 	int len = snprintf(buffer, BUFSIZE,
 			   "Usage: write message with format \"R|W|E:Tag:You Message\" into this file to generate kernel warning\n");
+	if (len < 0) {
+                pr_notice("%s unknown error.\n", __func__);
+                return -EFAULT;
+        }
 	if (*ppos)
 		return 0;
 	if (copy_to_user(buf, buffer, len)) {
@@ -647,15 +665,15 @@ static ssize_t proc_generate_kernel_notify_write(struct file *file,
 
 	switch (msg[0]) {
 	case 'R':
-		aee_kernel_reminding(&msg[2], colon_ptr + 1);
+		aee_kernel_reminding(&msg[2], "Hello World[Error]");
 		break;
 
 	case 'W':
-		aee_kernel_warning(&msg[2], colon_ptr + 1);
+		aee_kernel_warning(&msg[2], "Hello World[Error]");
 		break;
 
 	case 'E':
-		aee_kernel_exception(&msg[2], colon_ptr + 1);
+		aee_kernel_exception(&msg[2], "Hello World[Error]");
 		break;
 
 	default:
@@ -676,6 +694,8 @@ static ssize_t proc_generate_dal_read(struct file *file,
 		return 0;
 	aee_kernel_dal_show("Test for DAL\n");
 	len = sprintf(buffer, "DAL Generated\n");
+	if(len < 0)
+		strncpy(buffer, "unknown error", 14);
 
 	return len;
 }

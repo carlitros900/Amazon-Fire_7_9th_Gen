@@ -39,6 +39,7 @@
 #include <asm/esr.h>
 #include <asm/insn.h>
 #include <asm/traps.h>
+#include <asm/stack_pointer.h>
 #include <asm/stacktrace.h>
 #include <asm/exception.h>
 #include <asm/system_misc.h>
@@ -53,7 +54,7 @@ static const char *handler[]= {
 	"Error"
 };
 
-int show_unhandled_signals = 1;
+int show_unhandled_signals = 0;
 
 /*
  * Dump out the contents of some kernel memory nicely...
@@ -81,15 +82,14 @@ static void dump_mem(const char *lvl, const char *str, unsigned long bottom,
 		memset(str, ' ', sizeof(str));
 		str[sizeof(str) - 1] = '\0';
 
-		for (p = first, i = 0; i < (32 / 8)
-					&& p < top; i++, p += 8) {
+		for (p = first, i = 0; i < 8 && p < top; i++, p += 4) {
 			if (p >= bottom && p < top) {
-				unsigned long val;
+				unsigned int val;
 
-				if (__get_user(val, (unsigned long *)p) == 0)
-					sprintf(str + i * 17, " %016lx", val);
+				if (__get_user(val, (unsigned int *)p) == 0)
+					sprintf(str + i * 9, " %08x", val);
 				else
-					sprintf(str + i * 17, " ????????????????");
+					sprintf(str + i * 9, " ????????");
 			}
 		}
 		printk("%s%04lx:%s\n", lvl, first & 0xffff, str);
@@ -127,7 +127,7 @@ static void __dump_instr(const char *lvl, struct pt_regs *regs)
 	printk("%sCode: %s\n", lvl, str);
 }
 
-static void dump_instr(const char *lvl, struct pt_regs *regs)
+void dump_instr(const char *lvl, struct pt_regs *regs)
 {
 	if (!user_mode(regs)) {
 		mm_segment_t fs = get_fs();
@@ -149,6 +149,9 @@ static void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 
 	if (!tsk)
 		tsk = current;
+
+	if (!try_get_task_stack(tsk))
+		return;
 
 	/*
 	 * Switching between stacks is valid when tracing current and in
@@ -218,6 +221,8 @@ static void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 				 stack + sizeof(struct pt_regs));
 		}
 	}
+
+	put_task_stack(tsk);
 }
 
 void show_stack(struct task_struct *tsk, unsigned long *sp)
@@ -233,10 +238,9 @@ void show_stack(struct task_struct *tsk, unsigned long *sp)
 #endif
 #define S_SMP " SMP"
 
-static int __die(const char *str, int err, struct thread_info *thread,
-		 struct pt_regs *regs)
+static int __die(const char *str, int err, struct pt_regs *regs)
 {
-	struct task_struct *tsk = thread->task;
+	struct task_struct *tsk = current;
 	static int die_counter;
 	int ret;
 
@@ -251,7 +255,8 @@ static int __die(const char *str, int err, struct thread_info *thread,
 	print_modules();
 	__show_regs(regs);
 	pr_emerg("Process %.*s (pid: %d, stack limit = 0x%p)\n",
-		 TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk), thread + 1);
+		 TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk),
+		 end_of_stack(tsk));
 
 	if (!user_mode(regs)) {
 		dump_mem(KERN_EMERG, "Stack: ", regs->sp,
@@ -270,13 +275,13 @@ static DEFINE_RAW_SPINLOCK(die_lock);
  */
 void die(const char *str, struct pt_regs *regs, int err)
 {
-	struct thread_info *thread = current_thread_info();
+	struct task_struct *tsk = current;
 	int ret;
 	int cpu = -1;
 	static int die_owner = -1;
 
 	if (ESR_ELx_EC(err) == ESR_ELx_EC_DABT_CUR)
-		thread->cpu_excp++;
+		tsk->thread_info.cpu_excp++;
 
 	if (die_owner == -1)
 		aee_save_excp_regs(regs);
@@ -301,9 +306,9 @@ void die(const char *str, struct pt_regs *regs, int err)
 	die_owner = cpu;
 	console_verbose();
 	bust_spinlocks(1);
-	ret = __die(str, err, thread, regs);
+	ret = __die(str, err, regs);
 
-	if (regs && kexec_should_crash(thread->task))
+	if (regs && kexec_should_crash(current))
 		crash_kexec(regs);
 
 	bust_spinlocks(0);

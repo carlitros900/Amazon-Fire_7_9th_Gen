@@ -31,9 +31,12 @@
 #include "mach/mt_thermal.h"
 #include <linux/regmap.h>
 #include <linux/mfd/mt6397/core.h>
-#include <linux/platform_data/mtk_thermal.h>
 #include "upmu_common.h"
 #include "mtk_ts_cpu.h"
+
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
+#include <linux/thermal_framework.h>
+#endif
 
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 #include <linux/sign_of_life.h>
@@ -373,27 +376,30 @@ static int mtktspmic_thermal_notify(struct thermal_zone_device *thermal,
 #ifdef CONFIG_AMAZON_METRICS_LOG
 	char buf[TSPMIC_METRICS_STR_LEN];
 #endif
-	if (type == THERMAL_TRIP_CRITICAL) {
-		pr_err("%s: thermal_shutdown notify\n", __func__);
-		last_kmsg_thermal_shutdown();
-		pr_err("%s: thermal_shutdown notify end\n", __func__);
-	}
 
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 	if (type == THERMAL_TRIP_CRITICAL) {
-		pr_debug("[%s] Thermal shutdown PMIC, temp=%d, trip=%d\n",
+		pr_err("[%s] Thermal shutdown PMIC, temp=%d, trip=%d\n",
 				__func__, thermal->temperature, trip);
 		life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_PMIC);
 	}
 #endif
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
 	if (type == THERMAL_TRIP_CRITICAL) {
+		pr_err("%s: thermal_shutdown notify\n", __func__);
+		last_kmsg_thermal_shutdown();
+		pr_err("%s: thermal_shutdown notify end\n", __func__);
+	}
+#endif
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	if (type == THERMAL_TRIP_CRITICAL &&
 		snprintf(buf, TSPMIC_METRICS_STR_LEN,
 			"%s:tspmicmonitor;CT;1,temp=%d;trip=%d;CT;1:NR",
-			PREFIX, thermal->temperature, trip);
+			PREFIX, thermal->temperature, trip) > 0)
 		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-	}
+
 #endif
 
 	return 0;
@@ -431,10 +437,10 @@ static int tspmic_sysrst_set_cur_state(struct thermal_cooling_device *cdev,
 {
 	cl_dev_sysrst_state = state;
 	if (cl_dev_sysrst_state == 1) {
-		pr_debug("Power/PMIC_Thermal: reset, reset, reset!!!");
-		pr_debug("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
-		pr_debug("*****************************************");
-		pr_debug("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+		pr_err("Power/PMIC_Thermal: reset, reset, reset!!!");
+		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+		pr_err("*****************************************");
+		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
 
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 		life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_PMIC);
@@ -552,6 +558,10 @@ static ssize_t mtktspmic_write(struct file *file,
 		mtktspmic_dprintk(
 			"[mtktspmic_write] mtktspmic_unregister_thermal\n");
 		mtktspmic_unregister_thermal();
+
+		if (num_trip < 0 || num_trip > 10)
+			return -EINVAL;
+
 		for (i = 0; i < num_trip; i++)
 			g_THERMAL_TRIP[i] = t_type[i];
 		g_bind0[0] = g_bind1[0] = g_bind2[0] =

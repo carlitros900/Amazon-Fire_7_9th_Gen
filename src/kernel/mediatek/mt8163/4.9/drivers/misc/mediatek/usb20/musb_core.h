@@ -125,6 +125,11 @@ extern void send_otg_event(enum usb_otg_event event);
 #include "musb_gadget.h"
 #include <linux/usb/hcd.h>
 #include "musb_host.h"
+
+#ifdef CONFIG_DUAL_ROLE_USB_INTF
+#include <linux/usb/class-dual-role.h>
+#endif
+
 #ifdef CONFIG_OF
 
 enum {
@@ -543,6 +548,9 @@ struct musb {
 	enum usb_force_mode force_mode;
 #endif
 	struct workqueue_struct *st_wq;
+#ifdef CONFIG_DUAL_ROLE_USB_INTF
+	struct dual_role_phy_instance *dr_usb;
+#endif /* CONFIG_DUAL_ROLE_USB_INTF */
 
 #ifdef CONFIG_USB_AMAZON_DOCK
 	int dock_state;
@@ -676,6 +684,6 @@ static inline const char *otg_state_string(enum usb_otg_state state)
 }
 #endif
 
-extern void wake_up_bat(void);
 extern void register_usb_hal_disconnect_check(void (*function) (void));
+extern void wake_up_bat(void);
 #endif				/* __MUSB_CORE_H__ */

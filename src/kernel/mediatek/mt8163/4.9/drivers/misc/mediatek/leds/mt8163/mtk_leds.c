@@ -112,7 +112,7 @@ static unsigned int div_array_hal[PWM_DIV_NUM] = {
 static unsigned int backlight_PWM_div_hal = CLK_DIV1;
 #if defined(CONFIG_ENABLE_BACKLIGHT_FACTOR)
 #define MTK_LEDS_DEFAULT_BASE 350
-extern int mtk_leds_scale_enable;
+extern bool mtk_leds_scale_enable;
 static int mtk_leds_base = MTK_LEDS_DEFAULT_BASE;
 static int mtk_leds_scale= MTK_LEDS_DEFAULT_BASE;
 #endif
@@ -192,13 +192,21 @@ struct cust_mt65xx_led *get_cust_led_dtsi(void)
 		for (i = 0; i < MT65XX_LED_TYPE_TOTAL; i++) {
 
 			char node_name[32] = "mediatek,";
-
+			if (strlen(node_name) + strlen(leds_name[i]) + 1 >
+				sizeof(node_name)) {
+				pr_err("buffer for %s%s not enough\n",
+				node_name, leds_name[i]);
+				pled_dtsi[i].mode = 0;
+				pled_dtsi[i].data = -1;
+				continue;
+			}
 			pled_dtsi[i].name = leds_name[i];
 
 			led_node =
 			    of_find_compatible_node(NULL, NULL,
-						    strcat(node_name,
-							   leds_name[i]));
+					strncat(node_name, leds_name[i],
+						sizeof(node_name) - strlen(node_name) - 1));
+
 			if (!led_node) {
 				LEDS_DEBUG("Cannot find LED node from dts\n");
 				pled_dtsi[i].mode = 0;
@@ -345,6 +353,7 @@ int mt_led_set_pwm(int pwm_num, struct nled_setting *led)
 
 	pwm_setting.pwm_no = pwm_num;
 	pwm_setting.mode = PWM_MODE_OLD;
+	pwm_setting.pmic_pad = 0;
 
 	LEDS_DEBUG("led_set_pwm: mode=%d,pwm_no=%d\n", led->nled_mode,
 		   pwm_num);
@@ -633,6 +642,7 @@ int mt_backlight_set_pwm(int pwm_num, u32 level, u32 div,
 	unsigned int BacklightLevelSupport =
 	    Cust_GetBacklightLevelSupport_byPWM();
 	pwm_setting.pwm_no = pwm_num;
+	pwm_setting.intr = 0;
 
 	if (BacklightLevelSupport == BACKLIGHT_LEVEL_PWM_256_SUPPORT)
 		pwm_setting.mode = PWM_MODE_OLD;
@@ -1111,8 +1121,8 @@ void mt_mt65xx_led_set(struct led_classdev *led_cdev, enum led_brightness level)
 
 			if (mtk_leds_scale_enable == true) {
 				level =
-					((level * CONFIG_LIGHTNESS_MAPPING_VALUE) /
-					255) * mtk_leds_base / mtk_leds_scale;
+					(((level * CONFIG_LIGHTNESS_MAPPING_VALUE) /
+					255) * mtk_leds_base * 10 / mtk_leds_scale + 5) / 10;
 			} else {
 				level =
 					(level * CONFIG_LIGHTNESS_MAPPING_VALUE) /

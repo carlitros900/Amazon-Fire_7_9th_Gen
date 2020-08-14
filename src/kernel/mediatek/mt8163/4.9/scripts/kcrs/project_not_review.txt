@@ -4,3 +4,6 @@ cv.*
 fpga.*
 .*_pre_.*
 .*_schem.*
+abc123.*
+mustang.*
+abf123.*

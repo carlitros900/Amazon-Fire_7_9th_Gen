@@ -52,3 +52,5 @@ ifneq (, $(filter $(CONFIG_ARCH_MTK_PROJECT), "abc123" "abc123"))
 subdir-ccflags-y += -DOTG_WITHOUT_VBUS_CHECK
 subdir-ccflags-y += -DCONFIG_NO_CHARGER_KPOC
 endif
+
+obj-$(CONFIG_DUAL_ROLE_USB_INTF) += mtk_dual_role.o

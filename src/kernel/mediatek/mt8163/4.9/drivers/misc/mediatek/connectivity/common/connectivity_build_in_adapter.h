@@ -243,4 +243,6 @@ extern void gpio_dump_regs_range(int start, int end);
 void connectivity_export_dump_gpio_info(int start, int end);
 #endif
 
+int conn_export_file_opened_by_task(struct task_struct *task, struct file *file);
+void conn_export_read_task_name(struct task_struct *task, char *name, unsigned char name_size);
 #endif /* CONNECTIVITY_BUILD_IN_ADAPTER_H */

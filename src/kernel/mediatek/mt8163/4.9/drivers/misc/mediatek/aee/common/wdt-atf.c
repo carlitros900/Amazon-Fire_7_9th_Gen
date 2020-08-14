@@ -226,6 +226,8 @@ void aee_wdt_percpu_printf(int cpu, const char *fmt, ...)
 {
 	va_list args;
 
+	if(cpu < 0)
+		return;
 	if (wdt_percpu_log_buf[cpu] == NULL)
 		return;
 
@@ -254,6 +256,9 @@ static void aee_dump_cpu_reg_bin(int cpu, struct pt_regs *regs)
 #ifdef CONFIG_ARM64
 	int i;
 
+	if(cpu < 0)
+		return;
+
 	aee_wdt_percpu_printf(cpu,
 			"pc : %016llx, lr : %016llx, pstate : %016llx\n",
 			      regs->pc, regs->regs[30], regs->pstate);
@@ -265,6 +270,8 @@ static void aee_dump_cpu_reg_bin(int cpu, struct pt_regs *regs)
 	}
 	aee_wdt_percpu_printf(cpu, "\n");
 #else
+	if(cpu < 0)
+		return;
 	aee_wdt_percpu_printf(cpu, "pc  : %08lx, lr : %08lx, cpsr : %08lx\n",
 			      regs->ARM_pc, regs->ARM_lr, regs->ARM_cpsr);
 	aee_wdt_percpu_printf(cpu, "sp  : %08lx, ip : %08lx, fp : %08lx\n",
@@ -291,6 +298,7 @@ static void aee_wdt_dump_stack_bin(unsigned int cpu, unsigned long bottom,
 	unsigned long first;
 	unsigned int val;
 	char str[sizeof(" 12345678") * 8 + 1];
+	int n;
 
 	stacks_buffer_bin[cpu].real_len =
 	    aee_dump_stack_top_binary(stacks_buffer_bin[cpu].bin_buf,
@@ -332,9 +340,12 @@ static void aee_wdt_dump_stack_bin(unsigned int cpu, unsigned long bottom,
 		for (p = first, i = 0; i < 8 && p < top; i++, p += 4) {
 			if (p >= bottom && p < top) {
 				if (__get_user(val, (unsigned int *)p) == 0)
-					sprintf(str + i * 9, " %08x", val);
+					n = sprintf(str + i * 9, " %08x", val);
 				else
-					sprintf(str + i * 9, " ????????");
+					n = sprintf(str + i * 9, " ????????");
+
+				if(n < 0)
+					strncpy(str + i * 9, "unknown error", 14);
 			}
 		}
 		aee_wdt_percpu_printf(cpu, "%04lx:%s\n", first & 0xffff, str);
@@ -358,7 +369,9 @@ static void aee_wdt_dump_backtrace(unsigned int cpu, struct pt_regs *regs)
 	cur_frame.fp = regs->reg_fp;
 	cur_frame.pc = regs->reg_pc;
 	cur_frame.sp = regs->reg_sp;
+#ifndef CONFIG_ARM64
 	cur_frame.lr = regs->reg_lr;
+#endif
 	wdt_percpu_stackframe[cpu][0] = regs->reg_pc;
 	for (i = 1; i < MAX_EXCEPTION_FRAME; i++) {
 		fp = cur_frame.fp;
@@ -410,10 +423,14 @@ static void aee_save_reg_stack_sram(int cpu)
 {
 	int i;
 	int len = 0;
+	int n;
+
+	if(cpu < 0)
+		return;
 
 	if (regs_buffer_bin[cpu].real_len != 0) {
 		memset(str_buf[cpu], 0, sizeof(str_buf[cpu]));
-		snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
+		n = snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
 			 "\n\ncpu %d preempt=%lx, softirq=%lx, hardirq=%lx ",
 			 cpu,
 			 ((wdt_percpu_preempt_cnt[cpu] & PREEMPT_MASK)
@@ -422,16 +439,21 @@ static void aee_save_reg_stack_sram(int cpu)
 				>> SOFTIRQ_SHIFT),
 			 ((wdt_percpu_preempt_cnt[cpu] & HARDIRQ_MASK)
 				>> HARDIRQ_SHIFT));
+		if(n < 0)
+			strncpy(str_buf[cpu], "unknown error", 14);
 		aee_sram_fiq_log(str_buf[cpu]);
 
 		memset(str_buf[cpu], 0, sizeof(str_buf[cpu]));
 #ifdef CONFIG_ARM64
-		snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
+		n = snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
 				"\ncpu %d x0->x30 sp pc pstate\n", cpu);
 #else
-		snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
+		n = snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
 			 "\ncpu %d r0->r10 fp ip sp lr pc cpsr orig_r0\n", cpu);
 #endif
+		if(n < 0)
+                        strncpy(str_buf[cpu], "unknown error", 14);
+
 		aee_sram_fiq_log(str_buf[cpu]);
 		aee_sram_fiq_save_bin((char *)&(regs_buffer_bin[cpu].regs),
 						regs_buffer_bin[cpu].real_len);
@@ -440,16 +462,19 @@ static void aee_save_reg_stack_sram(int cpu)
 	if (stacks_buffer_bin[cpu].real_len > 0) {
 		memset(str_buf[cpu], 0, sizeof(str_buf[cpu]));
 #ifdef CONFIG_ARM64
-		snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
+		n = snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
 			"cpu %d stack [%016lx %016lx]\n",
 			 cpu, stacks_buffer_bin[cpu].bottom,
 			 stacks_buffer_bin[cpu].top);
 #else
-		snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
+		n = snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
 			"cpu %d stack [%08lx %08lx]\n",
 			 cpu, stacks_buffer_bin[cpu].bottom,
 			 stacks_buffer_bin[cpu].top);
 #endif
+		if(n < 0)
+                        strncpy(str_buf[cpu], "unknown error", 14);
+
 		aee_sram_fiq_log(str_buf[cpu]);
 		aee_sram_fiq_save_bin(stacks_buffer_bin[cpu].bin_buf,
 				      stacks_buffer_bin[cpu].real_len);
@@ -458,13 +483,19 @@ static void aee_save_reg_stack_sram(int cpu)
 		len = snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
 				"cpu %d backtrace : ", cpu);
 
+		if(len < 0)
+                        strncpy(str_buf[cpu], "unknown error", 14);
+
+
 		for (i = 0; i < MAX_EXCEPTION_FRAME; i++) {
 			if (wdt_percpu_stackframe[cpu][i] == 0)
 				break;
 			len += snprintf((str_buf[cpu] + len),
 				(sizeof(str_buf[cpu]) - len), "%08lx, ",
 				wdt_percpu_stackframe[cpu][i]);
-
+			if(len < 0) {
+	                        strncpy(str_buf[cpu], "unknown error", 14);
+}
 		}
 		aee_sram_fiq_log(str_buf[cpu]);
 		memset(str_buf[cpu], 0, sizeof(str_buf[cpu]));
@@ -494,6 +525,7 @@ void aee_wdt_atf_info(unsigned int cpu, struct pt_regs *regs)
 	int res = 0;
 	struct wd_api *wd_api = NULL;
 #endif
+	int n;
 
 	aee_wdt_percpu_printf(cpu, "===> aee_wdt_atf_info : cpu %d\n", cpu);
 	if (!cpu_possible(cpu)) {
@@ -539,8 +571,11 @@ void aee_wdt_atf_info(unsigned int cpu, struct pt_regs *regs)
 	if (atomic_xchg(&aee_wdt_zap_lock, 0)) {
 		if (!no_zap_locks) {
 			aee_wdt_zap_locks();
-			snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
+			n = snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
 					"\nCPU%d: zap printk locks\n", cpu);
+			if(n < 0)
+				strncpy(str_buf[cpu], "unknown error", 14);
+
 			aee_sram_fiq_log(str_buf[cpu]);
 			memset(str_buf[cpu], 0, sizeof(str_buf[cpu]));
 		}
@@ -647,6 +682,7 @@ void notrace aee_wdt_atf_entry(void)
 	void *regs;
 	struct pt_regs pregs;
 	int cpu = get_HW_cpuid();
+	int n;
 #ifdef CONFIG_MTK_RAM_CONSOLE
 #ifdef CONFIG_MTK_WATCHDOG
 	if (mtk_rgu_status_is_sysrst() || mtk_rgu_status_is_eintrst()) {
@@ -683,9 +719,12 @@ void notrace aee_wdt_atf_entry(void)
 		for (i = 0; i < 31; i++)
 			pregs.regs[i] = ((struct atf_aee_regs *)regs)->regs[i];
 
-		snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
+		n = snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
 			"WDT_CPU%d: PState=%llx, PC=%llx, SP=%llx, LR=%llx\n",
 			cpu, pregs.pstate, pregs.pc, pregs.sp, pregs.regs[30]);
+		if(n < 0)
+                        strncpy(str_buf[cpu], "unknown error", 14);
+
 		aee_sram_fiq_log(str_buf[cpu]);
 		memset(str_buf[cpu], 0, sizeof(str_buf[cpu]));
 
@@ -725,10 +764,14 @@ void notrace aee_wdt_atf_entry(void)
 		pregs.ARM_r0 =
 			(unsigned long)((struct atf_aee_regs *)regs)->regs[0];
 
-		snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
+		n = snprintf(str_buf[cpu], sizeof(str_buf[cpu]),
 			"WDT_CPU%d: PState=%lx, PC=%lx, SP=%lx, LR=%lx\n",
 			cpu, pregs.ARM_cpsr, pregs.ARM_pc, pregs.ARM_sp,
 			pregs.ARM_lr);
+
+		if(n < 0)
+                        strncpy(str_buf[cpu], "unknown error", 14);
+
 		aee_sram_fiq_log(str_buf[cpu]);
 		memset(str_buf[cpu], 0, sizeof(str_buf[cpu]));
 

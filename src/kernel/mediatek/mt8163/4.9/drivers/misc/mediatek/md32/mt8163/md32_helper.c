@@ -244,7 +244,7 @@ out:
 
 static int md32_log_open(struct inode *inode, struct file *file)
 {
-	pr_debug("[MD32] md32_log_open\n");
+	pr_debug("[MD32] %s\n", __func__);
 	return nonseekable_open(inode, file);
 }
 
@@ -266,8 +266,11 @@ static ssize_t md32_log_read(struct file *file, char __user *data, size_t len,
 	if (ret_len) {
 		g_md32_log_buf[ret_len] = '\0';
 	} else {
+		/*
 		strcpy(g_md32_log_buf, " ");
 		ret_len = strlen(g_md32_log_buf);
+		*/
+		g_md32_log_buf[0] = '\0';
 	}
 
 	copy_size = copy_to_user((unsigned char *)data,
@@ -473,7 +476,7 @@ void md32_reset_hold(void)
 
 	sw_rstn = readl(MD32_BASE);
 	if (sw_rstn == 0x0)
-		pr_debug("[MD32] has already been reseted!\n");
+		pr_debug("[MD32] has already been reset!\n");
 	else
 		mt_reg_sync_writel(0x0, MD32_BASE);
 }
@@ -518,7 +521,7 @@ int reboot_load_md32(struct device *dev)
 	sw_rstn = readl(MD32_BASE);
 
 	if (sw_rstn == 0x1)
-		pr_debug("[MD32] MD32 is already running, reboot now...\n");
+		pr_info("[MD32] MD32 is already running, reboot now...\n");
 
 	/* reset MD32 */
 	md32_reset_hold();
@@ -533,13 +536,15 @@ int reboot_load_md32(struct device *dev)
 	}
 
 	ret = load_md32_fw(dev, MD32_DATA_IMAGE, &d_sz);
-	if (ret < 0) {
+	if (ret != 0) {
+	/* Change from '<' to '!=', since err ret is a positive number */
 		pr_err("boot up failed --> load data image failed!\n");
 		goto load_error;
 	}
 
 	ret = load_md32_fw(dev, MD32_PROGRAM_IMAGE, &p_sz);
-	if (ret < 0) {
+	if (ret != 0) {
+	/* Change from '<' to '!=', since err ret is a positive number */
 		pr_err("boot up failed --> load program image failed!\n");
 		goto load_error;
 	}
@@ -741,7 +746,7 @@ static int md32_pm_event(struct notifier_block *nb,
 
 	switch (pm_event) {
 	case PM_POST_HIBERNATION:
-		pr_debug("[MD32] md32_pm_event reboot\n");
+		pr_debug("[MD32] %s reboot\n", __func__);
 		retval = reboot_load_md32(md32_dev->dev);
 		if (retval < 0) {
 			retval = -EINVAL;

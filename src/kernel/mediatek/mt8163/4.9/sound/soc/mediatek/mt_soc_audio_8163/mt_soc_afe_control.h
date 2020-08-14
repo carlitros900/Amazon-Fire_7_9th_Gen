@@ -62,6 +62,10 @@ bool SetI2SAdcIn(struct AudioDigtalI2S *DigtalI2S);
 bool Set2ndI2SAdcIn(struct AudioDigtalI2S *DigtalI2S);
 bool SetDLSrc2(uint32 SampleRate);
 
+#ifdef CONFIG_AMP_AW8737S
+void setUsingExtSpeaker(bool bSpeaker);
+#endif
+
 bool GetMrgI2SEnable(void);
 bool SetMrgI2SEnable(bool bEnable, unsigned int sampleRate);
 bool SetDaiBt(struct AudioDigitalDAIBT *mAudioDaiBt);

@@ -55,6 +55,27 @@
 		bootargs = "console=ttyS0,921600n1 root=/dev/ram initrd=0x44000200,0x200000";
 	};
 
+        firmware: firmware {
+                android: android {
+                        compatible = "android,firmware";
+                        fstab: fstab {
+                                compatible = "android,fstab";
+                                vendor {
+                                        compatible = "android,vendor";
+                                        dev =
+                "/dev/block/platform/soc/11230000.mmc/by-name/vendor";
+                                        type = "ext4";
+                                        mnt_flags = "ro";
+                                        #ifndef CONFIG_MTK_DM_VERITY_OFF
+                                        fsmgr_flags = "wait,verify";
+                                        #else
+                                        fsmgr_flags = "wait";
+                                        #endif
+                                };
+                        };
+                };
+        };
+
 	mtcpufreq {
 		compatible = "mediatek,mt8163-cpufreq";
 		reg-ext-vproc-supply = <&vproc>;
@@ -114,7 +135,7 @@
 		num_tbps = <3>;
 		temp = <44000 44500 45000 45500 49000 52000 53000 54000 56000 56000 56000 56000>;
 		type = <0 0 0 0 0 0 0 0 3 3 3 3>;
-		hyst = <0 0 0 0 0 0 0 0 0 0 0 0>;
+		hyst = <0 0 0 0 0 0 0 3000 0 0 0 0>;
 		num_cdevs = <2>;
 		cdev_names = "thermal_budget0","lcd-backlight0";
 	};
@@ -128,7 +149,7 @@
 		num_tbps = <3>;
 		temp = <49000 49500 50000 50500 53000 56000 57000 58000 60000 60000 60000 60000>;
 		type = <0 0 0 0 0 0 0 0 3 3 3 3>;
-		hyst = <0 0 0 0 0 0 0 0 0 0 0 0>;
+		hyst = <0 0 0 0 0 0 0 3000 0 0 0 0>;
 		num_cdevs = <2>;
 		cdev_names = "thermal_budget1","bcct1";
 	};
@@ -488,13 +509,29 @@
 
 	/* Accel Sensor */
 	g_sensor@4c {
-		compatible = "mediatek,gsensor";
+		compatible = "mediatek,mc3416";
 		reg = <0x4c>;
+		status = "okay";
+                i2c_num = <2>;
+                i2c_addr = <0x4c 0 0 0>;
+                direction = <6>;
+                power_id = <0xffff>;
+                power_vol = <0>;
+                firlen = <0>;
+                is_batch_supported = <0>;
 	};
 
 	g_sensor@18 {
 		compatible = "mediatek,bma_gsensor";
 		reg = <0x18>;
+		status = "okay";
+                i2c_num = <2>;
+                i2c_addr = <0x18 0 0 0>;
+                direction = <6>;
+                power_id = <0xffff>;
+                power_vol = <0>;
+                firlen = <0>;
+                is_batch_supported = <0>;
 	};
 
 	/* Gyro Sensor */
@@ -1474,6 +1511,15 @@
 				regulator-enable-ramp-delay = <216>;
 			};
 		};
+	};
+};
+
+&reserved_memory {
+	secure_carveout: secure-carveout {
+		compatible = "shared-secure-pool";
+		reusable;
+		size = <0 0x4c00000>;
+		alignment = <0 0x400000>;
 	};
 };
 

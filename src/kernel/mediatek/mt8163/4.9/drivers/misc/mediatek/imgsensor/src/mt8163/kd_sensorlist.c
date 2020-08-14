@@ -136,18 +136,18 @@ struct device *sensor_device;
 #define PFX "[kd_sensorlist]"
 #define PK_DBG_NONE(fmt, arg...)    do {} while (0)
 #define PK_DBG_FUNC(fmt, arg...)    pr_debug(PFX "[%s] " fmt, __func__, ##arg)
-#define PK_INFO(fmt, arg...)    pr_info(PFX " [%s] " fmt, __func__, ##arg)
+#define PK_INFO(fmt, arg...)    pr_debug(PFX " [%s] " fmt, __func__, ##arg)
 
 #undef DEBUG_CAMERA_HW_K
-/* #define DEBUG_CAMERA_HW_K */
+//#define DEBUG_CAMERA_HW_K
 #ifdef DEBUG_CAMERA_HW_K
-#define PK_DBG PK_DBG_FUNC
-#define PK_ERR(fmt, arg...)         pr_err(PFX "[%s] " fmt, __func__, ##arg)
+#define PK_DBG    PK_DBG_FUNC
+#define PK_ERR(fmt, arg...)         pr_debug(PFX "[%s] " fmt, __func__, ##arg)
 #define PK_XLOG_INFO(fmt, args...) \
 	pr_debug(PFX "[%s] " fmt, __func__, ##args)
 #else
 #define PK_DBG(fmt, arg...)
-#define PK_ERR(fmt, arg...)             pr_err(PFX "[%s] " fmt, __func__, ##arg)
+#define PK_ERR(fmt, arg...)             pr_debug(PFX "[%s] " fmt, __func__, ##arg)
 #define PK_XLOG_INFO(fmt, args...)
 
 #endif
@@ -897,9 +897,12 @@ kd_MultiSensorFeatureControl(enum CAMERA_DUAL_CAMERA_SENSOR_ENUM InvokeCamera,
 	/*KD_MULTI_FUNCTION_ENTRY();*/
 	for (i = KDIMGSENSOR_INVOKE_DRIVER_0;
 			i < KDIMGSENSOR_MAX_INVOKE_DRIVERS; i++) {
+
 		if (g_bEnableDriver[i] && g_pInvokeSensorFunc[i]) {
 
+
 			if (InvokeCamera == g_invokeSocketIdx[i]) {
+
 
 #if 1
 				if (DUAL_CAMERA_MAIN_SENSOR ==
@@ -1049,7 +1052,7 @@ MUINT32 kd_MultiSensorClose(void)
 					spin_lock(&kdsensor_drv_lock);
 					gI2CBusNum = SUPPORT_I2C_BUS_NUM1;
 					spin_unlock(&kdsensor_drv_lock);
-					PK_INFO("kd_MultiSensorOpen: switch I2C BUS%d\n",
+					PK_INFO("kd_MultiSensorClose: switch I2C BUS%d\n",
 						gI2CBusNum);
 				}
 #else
@@ -1429,6 +1432,7 @@ static inline int adopt_CAMERA_HW_CheckIsAlive(void)
 	MUINT32 i = 0;
 	MUINT32 sensorID = 0;
 	MUINT32 retLen = 0;
+	static char mtk_ccm_name_tmp[camera_info_size] = { 0 };
 
 	KD_IMGSENSOR_PROFILE_INIT();
 	/* power on sensor */
@@ -1479,11 +1483,13 @@ static inline int adopt_CAMERA_HW_CheckIsAlive(void)
 
 					PK_DBG("Sensor found ID = 0x%x\n",
 						sensorID);
-					snprintf(mtk_ccm_name,
-						sizeof(mtk_ccm_name),
+					memset(mtk_ccm_name_tmp, 0, camera_info_size);
+					snprintf(mtk_ccm_name_tmp,
+						 camera_info_size,
 						 "%s CAM[%d]:%s;", mtk_ccm_name,
 						 g_invokeSocketIdx[i],
 						 g_invokeSensorNameStr[i]);
+					memcpy(mtk_ccm_name, mtk_ccm_name_tmp, camera_info_size);
 					err = ERROR_NONE;
 				}
 				if (err != ERROR_NONE) {
@@ -2370,8 +2376,11 @@ static inline void Check_ccf_clk(void)
 
 static inline int kdSetSensorMclk(int *pBuf)
 {
+
+
 /* #ifndef CONFIG_ARM64 */
 	int ret = 0;
+
 	struct ACDK_SENSOR_MCLK_STRUCT *pSensorCtrl =
 		(struct ACDK_SENSOR_MCLK_STRUCT *) pBuf;
 
@@ -3096,6 +3105,7 @@ static long CAMERA_HW_Ioctl_Compat(struct file *filp,
 	if (!filp->f_op || !filp->f_op->unlocked_ioctl)
 		return -ENOTTY;
 
+
 	switch (cmd) {
 	case COMPAT_KDIMGSENSORIOC_X_GETINFO:
 		{
@@ -3267,8 +3277,10 @@ static long CAMERA_HW_Ioctl(struct file *a_pstFile,
 
 	mutex_lock(&kdCam_Mutex);
 
-
 	if (_IOC_DIR(a_u4Command) == _IOC_NONE) {
+		i4RetValue =  -EFAULT;
+		PK_ERR("__IOC_NONE No such command\n");
+		//goto CAMERA_HW_Ioctl_EXIT;
 	} else {
 		pBuff = kmalloc(_IOC_SIZE(a_u4Command), GFP_KERNEL);
 		if (pBuff == NULL) {
@@ -3287,6 +3299,7 @@ static long CAMERA_HW_Ioctl(struct file *a_pstFile,
 			}
 		}
 	}
+
 
 	pIdx = (u32 *) pBuff;
 	switch (a_u4Command) {
@@ -3316,6 +3329,7 @@ static long CAMERA_HW_Ioctl(struct file *a_pstFile,
 		break;
 	case KDIMGSENSORIOC_T_CHECK_IS_ALIVE:
 #ifndef CONFIG_CAMERA_MULTIMODAL
+
 		i4RetValue = adopt_CAMERA_HW_CheckIsAlive();
 #else
                 /*
@@ -3413,6 +3427,7 @@ static int CAMERA_HW_Release(struct inode *a_pstInode, struct file *a_pstFile)
 	/* PK_DBG("[%s] g_CamDrvOpenCnt %d\n", __func__, g_CamDrvOpenCnt); */
 	/* if (atomic_read(&g_CamDrvOpenCnt) == 0) */
 	checkPowerBeforClose(0, CAMERA_HW_DRVNAME1);
+	checkPowerBeforClose(1, CAMERA_HW_DRVNAME1);
 
 	return 0;
 }
@@ -3861,6 +3876,7 @@ static int CAMERA_HW_resume(struct platform_device *pdev)
 
 static int CAMERA_HW_probe2(struct platform_device *pdev)
 {
+
 #ifdef MTKCAM_USING_PWRREG
 
 	int ret = 0;

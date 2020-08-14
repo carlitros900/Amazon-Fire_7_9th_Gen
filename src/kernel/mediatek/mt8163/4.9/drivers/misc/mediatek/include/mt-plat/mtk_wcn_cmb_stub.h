@@ -56,10 +56,6 @@
 ********************************************************************************
 */
 
-typedef long (*wmt_get_temp)(void);
-
-extern wmt_get_temp wifi_get_temp;
-
 enum CMB_STUB_AIF_X {
 	CMB_STUB_AIF_0 = 0,	/* 0000: BT_PCM_OFF & FM analog (line in/out) */
 	CMB_STUB_AIF_1 = 1,	/* 0001: BT_PCM_ON & FM analog (in/out) */
@@ -166,6 +162,7 @@ extern int mt_combo_plt_exit_deep_idle(enum COMBO_IF src);
  */
 extern void mtk_wcn_cmb_stub_func_ctrl(unsigned int type, unsigned int on);
 extern void mtk_wcn_cmb_stub_clock_fail_dump(void);
+extern int mtk_wcn_cmb_stub_query_ctrl(void);
 extern int board_sdio_ctrl(unsigned int sdio_port_num, unsigned int on);
 extern int mtk_wcn_sdio_irq_flag_set(int falg);
 

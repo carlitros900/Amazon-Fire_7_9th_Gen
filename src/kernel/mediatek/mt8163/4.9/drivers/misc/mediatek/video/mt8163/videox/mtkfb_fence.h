@@ -24,6 +24,14 @@
 extern "C" {
 #endif
 
+#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+#include "tz_cross/trustzone.h"
+#include "tz_cross/ta_mem.h"
+#include <tz_cross/tz_ddp.h>
+#include "trustzone/kree/system.h"
+#include "trustzone/kree/mem.h"
+#endif
+
 #define MTK_FB_INVALID_ION_FD (-1)
 #define MTK_FB_INVALID_FENCE_FD (-1)
 
@@ -63,6 +71,11 @@ struct mtkfb_fence_buf_info {
 #ifdef CONFIG_MTK_HDMI_3D_SUPPORT
 	unsigned int layer_type;
 #endif
+#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+unsigned int secure_handle;
+unsigned int isScure;
+#endif
+
 };
 
 struct mtkfb_fence_sync_info {
@@ -132,7 +145,10 @@ struct disp_session_sync_info {
 };
 
 extern char *disp_session_mode_spy(unsigned int session_id);
-
+#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+extern KREE_SESSION_HANDLE
+primary_display_secure_memory_session_handle(void);
+#endif
 void mtkfb_init_fence(void);
 unsigned int mtkfb_query_buf_mva(unsigned int session_id, unsigned int layer_id,
 				 unsigned int idx);
@@ -150,9 +166,14 @@ unsigned int mtkfb_query_release_idx(unsigned int session_id,
 unsigned int mtkfb_query_frm_seq_by_addr(unsigned int session_id,
 					 unsigned int layer_id,
 					 unsigned long phy_addr);
-bool mtkfb_update_buf_info(unsigned int session_id, unsigned int layer_id,
-			   unsigned int idx, unsigned int mva_offset,
-			   unsigned int seq);
+bool mtkfb_update_buf_info(unsigned int session_id,
+			unsigned int layer_id, unsigned int idx,
+			unsigned int mva_offset, unsigned int seq
+			#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+			, unsigned int secure_handle,
+			unsigned int isSecure
+			#endif
+			);
 struct mtkfb_fence_buf_info *
 mtkfb_init_buf_info(struct mtkfb_fence_buf_info *buf);
 void mtkfb_release_fence(unsigned int session_id, unsigned int layer_id,

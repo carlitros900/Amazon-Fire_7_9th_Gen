@@ -142,6 +142,40 @@ static char STR_HELP[] =
  */
 static char dbg_buf[2048];
 
+unsigned char do_vdo_dsi_read(unsigned char cmd)
+{
+	unsigned char reg_value = 0x00;
+	struct ddp_lcm_read_cmd_table read_table;
+		memset(&read_table, 0,
+		sizeof(struct ddp_lcm_read_cmd_table));
+	read_table.cmd[0] = cmd;
+	read_table.cmd[1] = cmd;
+	read_table.cmd[2] = cmd;
+
+	do_lcm_vdo_read(&read_table);
+
+	reg_value = read_table.data[0].byte0;
+
+	DDPDBG("after b0 %x, b1 %x, b2 %x, b3 = %x\n",
+		read_table.data[0].byte0,
+		read_table.data[0].byte1,
+		read_table.data[0].byte2,
+		read_table.data[0].byte3);
+	DDPDBG("after b0 %x, b1 %x, b2 %x, b3 = %x\n",
+		read_table.data[1].byte0,
+		read_table.data[1].byte1,
+		read_table.data[1].byte2,
+		read_table.data[1].byte3);
+	DDPDBG("after b0 %x, b1 %x, b2 %x, b3 = %x\n",
+		read_table.data[2].byte0,
+		read_table.data[2].byte1,
+		read_table.data[2].byte2,
+		read_table.data[2].byte3);
+
+	return reg_value;
+
+}
+
 static void process_dbg_opt(const char *opt)
 {
 	int ret = 0;
@@ -227,6 +261,54 @@ static void process_dbg_opt(const char *opt)
 		} else {
 			goto Error;
 		}
+	}else if (strncmp(opt, "vdo_dsi_read:", 13) == 0) {
+		char *p = (char *)opt + 13;
+		unsigned int cmd;
+		unsigned char reg_value = 0x00;
+
+		ret = kstrtouint(p, 0, &cmd);
+		if (ret) {
+			snprintf(buf, 50, "error to parse cmd %s\n", opt);
+			return;
+		}
+		DDPMSG("enter vdo_dsi_read!\n");
+		reg_value = do_vdo_dsi_read(cmd);
+
+		snprintf(buf, 50, "read reg:0x%x,value: 0x%x\n", cmd, reg_value);
+		return;
+	}else if (strncmp(opt, "set_dsi_cmd:", 12) == 0) {
+		int cmd;
+		int para_cnt, i;
+		char para[15] = {0};
+		static char fmt[256] = {0};
+		static const char temp[] = "set_dsi_cmd:0x%x";
+
+		memset(fmt, 0, sizeof(fmt));
+		strncpy((char *)fmt, (char *)temp, sizeof(temp));
+
+		for (i = 0; i < ARRAY_SIZE(para); i++)
+			strncat(fmt, ",0x%hhx", sizeof(fmt) - strlen(fmt) - 1);
+
+		strncat(fmt, "\n", sizeof(fmt) - strlen(fmt) - 1);
+
+		ret = sscanf(opt, fmt,
+			&cmd, &para[0], &para[1], &para[2], &para[3], &para[4],
+			&para[5], &para[6], &para[7], &para[8], &para[9],
+			&para[10], &para[11], &para[12], &para[13], &para[14]);
+
+		if (ret < 1 || ret > ARRAY_SIZE(para) + 1) {
+			snprintf(buf, 50, "error to parse cmd %s\n", opt);
+			return;
+		}
+
+		para_cnt = ret - 1;
+
+		DSI_set_cmdq_V2(DISP_MODULE_DSI0, NULL, cmd, para_cnt, para, 1);
+
+		DDPMSG("set_dsi_cmd cmd=0x%x\n", cmd);
+		for (i = 0; i < para_cnt; i++)
+			DDPMSG("para[%d] = 0x%x\n", i, para[i]);
+
 	} else if (strncmp(opt, "pwm0:", 5) == 0 ||
 		   strncmp(opt, "pwm1:", 5) == 0) {
 		unsigned long level = 0;

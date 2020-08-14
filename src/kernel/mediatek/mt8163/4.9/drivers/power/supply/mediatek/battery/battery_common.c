@@ -317,6 +317,7 @@ static enum power_supply_property battery_props[] = {
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_CAPACITY,
+	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_CHARGE_COUNTER,
 	/* Add for Battery Service */
 	POWER_SUPPLY_PROP_batt_vol,
@@ -339,6 +340,7 @@ static enum power_supply_property battery_props[] = {
 #ifdef CONFIG_USB_AMAZON_DOCK
 	POWER_SUPPLY_PROP_DOCK_PRESENT,
 #endif
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 };
 
 /*void check_battery_exist(void);*/
@@ -600,6 +602,9 @@ static int battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CAPACITY:
 		val->intval = data->BAT_CAPACITY;
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_FULL:
+		val->intval = battery_meter_get_charge_full();
+		break;
 	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
 		val->intval = battery_meter_get_charge_counter();
 		break;
@@ -652,7 +657,9 @@ static int battery_get_property(struct power_supply *psy,
 			== TYPE_UNDOCKED ? 0 : 1;
 		break;
 #endif
-
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		val->intval = data->BAT_batt_vol;
+		break;
 	default:
 		ret = -EINVAL;
 		break;
@@ -1699,7 +1706,7 @@ static ssize_t store_Custom_Charging_Current(
 	struct device *dev, struct device_attribute *attr,
 	const char *buf, size_t size)
 {
-	int ret, cur;
+	int ret, cur = 0;
 
 	ret = kstrtouint(buf, 0, &cur);
 	g_custom_charging_current = cur;
@@ -1768,7 +1775,7 @@ static ssize_t show_Custom_RTC_SOC(struct device *dev,
 static ssize_t store_Custom_RTC_SOC(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
-	int ret, cur;
+	int ret, cur = 0;
 
 	ret = kstrtouint(buf, 0, &cur);
 
@@ -3990,7 +3997,7 @@ int charger_hv_detect_sw_thread_handler(void *unused)
 	ktime_t ktime;
 	unsigned int charging_enable;
 	unsigned int hv_voltage = batt_cust_data.v_charger_max * 1000;
-	bool hv_status;
+	bool hv_status = false;
 
 	do {
 		ktime = ktime_set(0, BAT_MS_TO_NS(1000));

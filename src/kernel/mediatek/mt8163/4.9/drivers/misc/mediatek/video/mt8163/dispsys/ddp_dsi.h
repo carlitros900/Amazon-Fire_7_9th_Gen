@@ -181,6 +181,9 @@ extern int ddp_mutex_enable(int mutex_id, enum DDP_SCENARIO_ENUM scenario,
 			    void *handle);
 void DSI_clk_HS_mode(enum DISP_MODULE_ENUM module, struct cmdqRecStruct *cmdq,
 		     bool enter);
+extern void DSI_set_cmdq_V2(enum DISP_MODULE_ENUM module, struct cmdqRecStruct *cmdq,
+		     unsigned int cmd, unsigned char count,
+		     unsigned char *para_list, unsigned char force_update);
 #ifdef __cplusplus
 }
 #endif

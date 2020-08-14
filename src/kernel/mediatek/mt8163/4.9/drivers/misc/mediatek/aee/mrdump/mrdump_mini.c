@@ -547,6 +547,7 @@ static int mrdump_mini_cpu_regs(int cpu, struct pt_regs *regs,
 {
 	char name[NOTE_NAME_SHORT];
 	int id;
+	int n;
 
 	if (mrdump_mini_ehdr == NULL)
 		mrdump_mini_init();
@@ -555,9 +556,13 @@ static int mrdump_mini_cpu_regs(int cpu, struct pt_regs *regs,
 	if (regs == NULL)
 		return -1;
 	id = main ? 0 : cpu + 1;
+	if(id < 0)
+		return -1;
 	if (strncmp(mrdump_mini_ehdr->prstatus[id].name, "NA", 2))
 		return -1;
-	snprintf(name, NOTE_NAME_SHORT - 1, main ? "ke%d" : "core%d", cpu);
+	n = snprintf(name, NOTE_NAME_SHORT - 1, main ? "ke%d" : "core%d", cpu);
+	if(n < 0)
+		return -1;
 	fill_prstatus(&mrdump_mini_ehdr->prstatus[id].data, regs, tsk,
 			id ? id : (100 + cpu));
 	fill_note_S(&mrdump_mini_ehdr->prstatus[id].note, name, NT_PRSTATUS,
@@ -584,6 +589,7 @@ void mrdump_mini_build_task_info(struct pt_regs *regs)
 	struct task_struct *tsk, *cur;
 	struct task_struct *previous;
 	struct aee_process_info *cur_proc;
+	int n;
 
 	if (!mrdump_virt_addr_valid(current_thread_info())) {
 		LOGE("current thread info invalid\n");
@@ -660,12 +666,17 @@ void mrdump_mini_build_task_info(struct pt_regs *regs)
 		cur_proc->ke_frame.pc = ipanic_stack_entries[0];
 		cur_proc->ke_frame.lr = ipanic_stack_entries[1];
 	}
-	snprintf(cur_proc->ke_frame.pc_symbol, AEE_SZ_SYMBOL_S, "[<%p>] %pS",
+	n = snprintf(cur_proc->ke_frame.pc_symbol, AEE_SZ_SYMBOL_S, "[<%p>] %pS",
 		 (void *)(unsigned long)cur_proc->ke_frame.pc,
 		 (void *)(unsigned long)cur_proc->ke_frame.pc);
-	snprintf(cur_proc->ke_frame.lr_symbol, AEE_SZ_SYMBOL_L, "[<%p>] %pS",
+	if(n < 0)
+                strncpy(cur_proc->ke_frame.pc_symbol, "pc_symbol unknown error", sizeof(cur_proc->ke_frame.pc_symbol));
+
+	n = snprintf(cur_proc->ke_frame.lr_symbol, AEE_SZ_SYMBOL_L, "[<%p>] %pS",
 		 (void *)(unsigned long)cur_proc->ke_frame.lr,
 		 (void *)(unsigned long)cur_proc->ke_frame.lr);
+	if(n < 0)
+		strncpy(cur_proc->ke_frame.lr_symbol, "lr_symbol unknown error", sizeof(cur_proc->ke_frame.lr_symbol));
 }
 
 int mrdump_task_info(unsigned char *buffer, size_t sz_buf)
@@ -726,13 +737,16 @@ static int mrdump_mini_add_extra_misc(unsigned long vaddr, unsigned long size,
 	const char *name)
 {
 	char name_buf[SZ_128];
+	int n;
 
 	if (mrdump_mini_ehdr == NULL ||
 		size == 0 ||
 		size > SZ_512K ||
 		name == NULL)
 		return -1;
-	snprintf(name_buf, SZ_128, "_EXTRA_%s_", name);
+	n = snprintf(name_buf, SZ_128, "_EXTRA_%s_", name);
+	if(n < 0)
+		return -1;
 	mrdump_mini_add_misc(vaddr, size, 0, name_buf);
 	return 0;
 }

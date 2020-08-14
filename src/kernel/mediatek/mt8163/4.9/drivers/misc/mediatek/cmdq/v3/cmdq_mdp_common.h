@@ -78,6 +78,8 @@ typedef u64 (*CmdqMdpGetEngineGroupBits) (u32 engine_group);
 
 typedef void (*CmdqMdpEnableCommonClock) (bool enable);
 
+typedef void (*CmdqCheckHwStatus) (struct cmdqRecStruct *handle);
+
 struct cmdqMDPFuncStruct {
 	CmdqDumpMMSYSConfig dumpMMSYSConfig;
 	CmdqVEncDumpInfo vEncDumpInfo;
@@ -108,6 +110,7 @@ struct cmdqMDPFuncStruct {
 	CmdqEndTaskCB endTask;
 	CmdqBeginTaskCB beginISPTask;
 	CmdqEndTaskCB endISPTask;
+	CmdqCheckHwStatus CheckHwStatus;
 };
 
 struct mdp_pmqos_record {
@@ -219,5 +222,7 @@ void testcase_clkmgr_mdp(void);
 
 /* Platform virtual function setting */
 void cmdq_mdp_platform_function_setting(void);
+
+long cmdq_mdp_get_module_base_VA_MDP_WROT0(void);
 
 #endif				/* __CMDQ_MDP_COMMON_H__ */

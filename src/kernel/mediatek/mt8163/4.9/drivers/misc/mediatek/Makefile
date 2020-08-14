@@ -45,12 +45,17 @@ obj-$(CONFIG_MTK_GPT_SCHEME_SUPPORT)	+= partition/
 obj-$(CONFIG_MTK_SYSENV)	+= sysenv/
 obj-$(CONFIG_MTK_PWM)	    += pwm/
 ifeq ($(CONFIG_MTK_SENSOR_SUPPORT),y)
+ifeq ($(CONFIG_MTK_SENSORS_1_0),y)
+obj-$(CONFIG_MTK_SENSORS_1_0) += sensors-1.0/
+else
 obj-$(CONFIG_CUSTOM_KERNEL_SENSORHUB)	+= sensorHub/
 obj-$(CONFIG_MTK_HWMON)	    += hwmon/
 obj-$(CONFIG_CUSTOM_KERNEL_ALSPS) += alsps/
 obj-$(CONFIG_CUSTOM_KERNEL_ACCELEROMETER) += accelerometer/
 obj-$(CONFIG_CUSTOM_KERNEL_GYROSCOPE) += gyroscope/
 endif
+endif
+
 obj-$(CONFIG_MTK_VIBRATOR)	+= vibrator/
 obj-y += irtx/
 obj-$(CONFIG_MTK_MT6306_GPIO_SUPPORT) += gpio/
@@ -149,6 +154,7 @@ obj-$(CONFIG_MTK_USB2JTAG_SUPPORT) += usb2jtag/
 obj-$(CONFIG_MTK_WATCHPOINT) += watchpoint/
 obj-$(CONFIG_MTK_DYNAMIC_BOOST) += dynamic_boost/
 obj-$(CONFIG_MTK_BTCVSD) += btcvsd/
+obj-$(CONFIG_MTK_LASTPC) += lastpc/
 
 #io boost
 obj-y += io_boost/

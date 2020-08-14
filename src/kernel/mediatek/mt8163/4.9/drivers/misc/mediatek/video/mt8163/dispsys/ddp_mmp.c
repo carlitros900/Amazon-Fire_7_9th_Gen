@@ -76,6 +76,16 @@ void init_ddp_mmp_events(void)
 		DDP_MMP_Events.primary_wdma_fence_release =
 			mmprofile_register_event(DDP_MMP_Events.primary_Parent,
 						 "wdma_fence_r");
+
+		DDP_MMP_Events.present_fence_release =
+			mmprofile_register_event(DDP_MMP_Events.primary_Parent,
+						"preset_fence_release");
+		DDP_MMP_Events.present_fence_get =
+			mmprofile_register_event(DDP_MMP_Events.primary_Parent,
+						"preset_fence_get");
+		DDP_MMP_Events.present_fence_set =
+			mmprofile_register_event(DDP_MMP_Events.primary_Parent,
+						"preset_fence_set");
 #ifdef CONFIG_MTK_HDMI_SUPPORT
 		DDP_MMP_Events.Extd_Parent = mmprofile_register_event(
 			DDP_MMP_Events.DDP, "ext_disp");

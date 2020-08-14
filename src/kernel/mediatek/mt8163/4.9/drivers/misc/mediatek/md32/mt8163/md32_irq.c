@@ -120,7 +120,7 @@ void md32_dump_regs(void)
 
 void md32_aee_stop(void)
 {
-	pr_debug("md32_aee_stop\n");
+	pr_debug("%s start\n", __func__);
 
 	md32_aee_status.status = readl(MD32_BASE);
 	md32_aee_status.pc = readl(MD32_DEBUG_PC_REG);
@@ -129,7 +129,7 @@ void md32_aee_stop(void)
 
 	mt_reg_sync_writel(0x0, MD32_BASE);
 
-	pr_debug("md32_aee_stop end\n");
+	pr_debug("%s end\n", __func__);
 }
 
 int md32_aee_dump(char *buf)
@@ -213,7 +213,10 @@ void md32_prepare_aed(char *aed_str, struct md32_aed_cfg *aed)
 	pr_debug("md32_prepare_aed\n");
 
 	detail = kmalloc(MD32_AED_STR_LEN, GFP_KERNEL);
-	ptr = detail;
+	if (detail)
+		ptr = detail;
+	else
+		return;
 	detail[MD32_AED_STR_LEN - 1] = '\0';
 	ptr += snprintf(detail, MD32_AED_STR_LEN, "%s", aed_str);
 	ptr += sprintf(ptr, " md32 pc=0x%08x, r14=0x%08x, r15=0x%08x\n",

@@ -31,6 +31,7 @@ extern void spm_md32_sram_con(u32 value);
 extern bool spm_set_suspned_pcm_init_flag(u32 *suspend_flags);
 
 extern void spm_output_sleep_option(void);
+extern u32 spm_get_last_wakeup_src(void);
 
 #ifdef CONFIG_MTK_SMART_BATTERY
 extern int get_dynamic_period(int first_use,

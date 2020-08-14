@@ -37,7 +37,6 @@
 #include "ged_profile_dvfs.h"
 #include "ged_log.h"
 #include "ged_base.h"
-#include "ged_hal.h"
 
 #define MTK_DEFER_DVFS_WORK_MS          10000
 #define MTK_DVFS_SWITCH_INTERVAL_MS     50
@@ -77,6 +76,7 @@ static unsigned int gpu_cust_upbound_freq;
 
 static unsigned int g_ui32PreFreqID;
 static unsigned int g_bottom_freq_id;
+static unsigned int g_last_def_commit_freq_id;
 static unsigned int g_cust_upbound_freq_id;
 static unsigned int g_cust_boost_freq_id;
 static unsigned int g_computed_freq_id;
@@ -126,7 +126,6 @@ static int g_VsyncOffsetLevel;
 static int g_probe_pid = GED_NO_UM_SERVICE;
 
 typedef void (*gpufreq_input_boost_notify)(unsigned int);
-typedef void (*gpufreq_power_limit_notify)(unsigned int);
 
 extern void mt_gpufreq_input_boost_notify_registerCB(gpufreq_input_boost_notify pCB);
 extern void mt_gpufreq_power_limit_notify_registerCB(gpufreq_power_limit_notify pCB);
@@ -218,9 +217,9 @@ static void _init_loading_ud_table(void)
 
 unsigned long ged_query_info( GED_INFO eType)
 {
-	unsigned int gpu_loading;
-	unsigned int gpu_block;
-	unsigned int gpu_idle;
+	unsigned int gpu_loading = 0;
+	unsigned int gpu_block = 0;
+	unsigned int gpu_idle = 0;
 
 	switch (eType) {
 		case GED_LOADING:
@@ -470,10 +469,10 @@ bool ged_dvfs_gpu_freq_commit(unsigned long ui32NewFreqID, unsigned long ui32New
 {
 	int bCommited=false;
 	unsigned long ui32CurFreqID;
-	struct gpu_info info;
-	u32 systrace_enabled = 0;
 
 	ui32CurFreqID = mt_gpufreq_get_cur_freq_index();
+	if (eCommitType == GED_DVFS_DEFAULT_COMMIT)
+		g_last_def_commit_freq_id = ui32NewFreqID;
 	if (ged_dvfs_gpu_freq_commit_fp != NULL) {
 
 		if (ui32NewFreqID > g_bottom_freq_id) {
@@ -520,26 +519,13 @@ bool ged_dvfs_gpu_freq_commit(unsigned long ui32NewFreqID, unsigned long ui32New
 			 * since it is possible to have multiple freq settings in previous execution period
 			 * Does this fatal for precision?
 			 */
-			ged_log_buf_print(ghLogBuf_DVFS,
+			ged_log_buf_print2(ghLogBuf_DVFS, GED_LOG_ATTR_TIME,
 				"[GED_K] new freq ID committed: idx=%lu type=%u, g_type=%u",
 				ui32NewFreqID, eCommitType, g_CommitType);
 			if (bCommited == true) {
 				ged_log_buf_print(ghLogBuf_DVFS, "[GED_K] committed true");
 				g_ui32PreFreqID = ui32CurFreqID;
 			}
-		}
-
-		ged_hal_get_systrace_gpuinfo_status(&systrace_enabled);
-		if ((mtk_get_gpuinfo(&info) == true) &&
-			(systrace_enabled == 1)) {
-			pid_t pid = 2454;
-
-			mtk_gpu_systrace_c(pid, info.freq, "gpu freq");
-			mtk_gpu_systrace_c(pid, info.loading, "gpu loading");
-			mtk_gpu_systrace_c(pid, info.dvfs_type,
-						"gpu dvfs type");
-			mtk_gpu_systrace_c(pid, info.thermal_limit_freq,
-						"gpu thermal limit freq");
 		}
 	}
 
@@ -615,10 +601,6 @@ GED_ERROR ged_dvfs_vsync_offset_event_switch(GED_DVFS_VSYNC_OFFSET_SWITCH_CMD eE
 		case GED_DVFS_VSYNC_OFFSET_VR_EVENT:
 			(bSwitch) ? (g_ui32EventStatus |= GED_EVENT_VR) :
 				(g_ui32EventStatus &= (~GED_EVENT_VR));
-			break;
-		case GED_DVFS_VSYNC_OFFSET_DHWC_EVENT:
-			(bSwitch) ? (g_ui32EventStatus |= GED_EVENT_DHWC) :
-				(g_ui32EventStatus &= (~GED_EVENT_DHWC));
 			break;
 		case GED_DVFS_VSYNC_OFFSET_GAS_EVENT:
 			(bSwitch) ? (g_ui32EventStatus |= GED_EVENT_GAS) :
@@ -1109,7 +1091,6 @@ void ged_dvfs_boost_gpu_freq(void)
 static void ged_dvfs_set_bottom_gpu_freq(unsigned int ui32FreqLevel)
 {
 	unsigned int ui32MaxLevel;
-	static unsigned int gs_last_commit_freq_id;
 	static unsigned int s_bottom_freq_id;
 
 	if (gpu_debug_enable)
@@ -1124,23 +1105,25 @@ static void ged_dvfs_set_bottom_gpu_freq(unsigned int ui32FreqLevel)
 	/* 0 => The highest frequency */
 	/* table_num - 1 => The lowest frequency */
 	s_bottom_freq_id = ui32MaxLevel - ui32FreqLevel;
+	gpu_bottom_freq = mt_gpufreq_get_freq_by_idx(s_bottom_freq_id);
 	if (g_bottom_freq_id < s_bottom_freq_id) {
 		g_bottom_freq_id = s_bottom_freq_id;
-		if (s_bottom_freq_id < gs_last_commit_freq_id)
-			ged_dvfs_gpu_freq_commit(gs_last_commit_freq_id,
-				gpu_bottom_freq, GED_DVFS_SET_BOTTOM_COMMIT);
-		else
+		if (s_bottom_freq_id < g_last_def_commit_freq_id)
 			ged_dvfs_gpu_freq_commit(s_bottom_freq_id,
-				gpu_bottom_freq, GED_DVFS_SET_BOTTOM_COMMIT);
+			gpu_bottom_freq,
+			GED_DVFS_SET_BOTTOM_COMMIT);
+		else
+			ged_dvfs_gpu_freq_commit(g_last_def_commit_freq_id,
+			mt_gpufreq_get_freq_by_idx(g_last_def_commit_freq_id),
+			GED_DVFS_SET_BOTTOM_COMMIT);
+	} else {
+	/* if current id is larger, ie lower freq, reflect immedately */
+		g_bottom_freq_id = s_bottom_freq_id;
+		if (s_bottom_freq_id < mt_gpufreq_get_cur_freq_index())
+			ged_dvfs_gpu_freq_commit(s_bottom_freq_id,
+			gpu_bottom_freq,
+			GED_DVFS_SET_BOTTOM_COMMIT);
 	}
-	g_bottom_freq_id = s_bottom_freq_id;
-	gpu_bottom_freq = mt_gpufreq_get_freq_by_idx(g_bottom_freq_id);
-
-	/* if current id is larger, ie lower freq, we need to reflect immedately */
-	gs_last_commit_freq_id = mt_gpufreq_get_cur_freq_index();
-	if (g_bottom_freq_id < gs_last_commit_freq_id)
-		ged_dvfs_gpu_freq_commit(g_bottom_freq_id, gpu_bottom_freq, GED_DVFS_SET_BOTTOM_COMMIT);
-
 	mutex_unlock(&gsDVFSLock);
 }
 
@@ -1164,7 +1147,7 @@ static void ged_dvfs_custom_boost_gpu_freq(unsigned int ui32FreqLevel)
 
 	/* 0 => The highest frequency */
 	/* table_num - 1 => The lowest frequency */
-	g_cust_boost_freq_id = ui32MaxLevel - ui32FreqLevel;
+	g_cust_boost_freq_id = ui32FreqLevel;
 	gpu_cust_boost_freq = mt_gpufreq_get_freq_by_idx(g_cust_boost_freq_id);
 
 	if (g_cust_boost_freq_id < mt_gpufreq_get_cur_freq_index())
@@ -1188,7 +1171,7 @@ static void ged_dvfs_custom_ceiling_gpu_freq(unsigned int ui32FreqLevel)
 
 	/* 0 => The highest frequency */
 	/* table_num - 1 => The lowest frequency */
-	g_cust_upbound_freq_id = ui32MaxLevel - ui32FreqLevel;
+	g_cust_upbound_freq_id = ui32FreqLevel;
 	gpu_cust_upbound_freq = mt_gpufreq_get_freq_by_idx(g_cust_upbound_freq_id);
 
 	if (g_cust_upbound_freq_id > mt_gpufreq_get_cur_freq_index())
@@ -1206,9 +1189,7 @@ static unsigned int ged_dvfs_get_bottom_gpu_freq(void)
 
 static unsigned int ged_dvfs_get_custom_ceiling_gpu_freq(void)
 {
-	unsigned int ui32MaxLevel = mt_gpufreq_get_dvfs_table_num() - 1;
-
-	return ui32MaxLevel - g_cust_upbound_freq_id;
+	return g_cust_upbound_freq_id;
 }
 
 static unsigned long ged_get_gpu_bottom_freq(void)
@@ -1229,9 +1210,7 @@ static unsigned long ged_get_gpu_custom_upbound_freq(void)
 
 unsigned int ged_dvfs_get_custom_boost_gpu_freq(void)
 {
-	unsigned int ui32MaxLevel = mt_gpufreq_get_dvfs_table_num() - 1;
-
-	return ui32MaxLevel - g_cust_boost_freq_id;
+	return g_cust_boost_freq_id;
 }
 
 /* Need spinlocked */

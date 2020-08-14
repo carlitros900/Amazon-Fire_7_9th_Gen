@@ -243,6 +243,7 @@ enum DAL_STATUS DAL_Dynamic_Change_FB_Layer(unsigned int isAEEEnabled)
 	return DAL_STATUS_OK;
 }
 
+static struct disp_session_input_config session_input;
 enum DAL_STATUS DAL_Clean(void)
 {
 	enum DAL_STATUS ret = DAL_STATUS_OK;
@@ -288,7 +289,6 @@ enum DAL_STATUS DAL_Clean(void)
 	 * please modify 3D driver
 	 */
 	if (isAEEEnabled == 1) {
-		struct disp_session_input_config session_input;
 		struct disp_input_config *input;
 
 		memset((void *)&session_input, 0, sizeof(session_input));
@@ -353,7 +353,6 @@ enum DAL_STATUS DAL_Printf(const char *fmt, ...)
 	va_list args;
 	uint i;
 	enum DAL_STATUS ret = DAL_STATUS_OK;
-	struct disp_session_input_config session_input;
 	struct disp_input_config *input;
 
 	/*

@@ -49,7 +49,7 @@
 void __iomem *EMI_BASE_ADDR;
 #define MAX_EMI_MPU_STORE_CMD_LEN 128
 static unsigned int emi_physical_offset;
-static spinlock_t emi_mpu_lock;
+static DEFINE_MUTEX(emi_mpu_lock);
 
 #ifndef DISABLE_IRQ
 static unsigned int vio_addr;
@@ -218,9 +218,13 @@ char *smi_larb4_port[4] = {"mjc_mv_rd", "mjc_mv_wr",
 
 static int __match_id(u32 axi_id, int tbl_idx, u32 port_ID)
 {
-	u32 mm_larb;
-	u32 smi_port;
+	u32 mm_larb = 0;
+	u32 smi_port = 0;
 
+	if(tbl_idx < 0){
+		pr_err("[EMI MPU ERROR] Invalidate tbl_idx para!\n");
+		return 0;
+	}
 	if (((axi_id & mst_tbl[tbl_idx].id_mask) == mst_tbl[tbl_idx].id_val)
 		&& (port_ID == mst_tbl[tbl_idx].port)) {
 		switch (port_ID) {
@@ -389,15 +393,18 @@ static void emi_reg_write(unsigned int val, void __iomem *addr)
 /*EMI MPU violation handler*/
 static irqreturn_t mpu_violation_irq(int irq, void *dev_id)
 {
-	u32 dbg_s, dbg_t, dbg_pqry;
-	u32 master_ID, domain_ID, wr_vio;
-	s32 region;
-	char *master_name;
-
-	KREE_SESSION_HANDLE emi_session;
+	u32 dbg_s = 0;
+	u32 dbg_t = 0;
+	u32 dbg_pqry = 0;
+	u32 master_ID = 0;
+	u32 domain_ID = 0;
+	u32 wr_vio = 0;
+	s32 region = 0;
+	char *master_name = NULL;
+	KREE_SESSION_HANDLE emi_session = 0;
 	union MTEEC_PARAM param[4];
-	int ret;
-
+	int ret = 0;
+	memset(param,0,sizeof(param));
 
 	pr_err("[EMI MPU] Violation information from TA.\n");
 
@@ -471,7 +478,6 @@ unsigned int end, int region, unsigned int access_permission)
 	int ret = 0;
 	unsigned int tmp, tmp2;
 	unsigned int ax_pm, ax_pm2;
-	unsigned long flags;
 
 	if ((end != 0) || (start != 0)) {
 		/*Address 64KB alignment*/
@@ -486,7 +492,7 @@ unsigned int end, int region, unsigned int access_permission)
 	ax_pm = (access_permission << 16) >> 16;
 	ax_pm2 = (access_permission >> 16);
 
-	spin_lock_irqsave(&emi_mpu_lock, flags);
+	mutex_lock(&emi_mpu_lock);
 
 	switch (region) {
 	case 0:
@@ -654,7 +660,7 @@ unsigned int end, int region, unsigned int access_permission)
 		break;
 	}
 
-	spin_unlock_irqrestore(&emi_mpu_lock, flags);
+	mutex_unlock(&emi_mpu_lock);
 
 	return ret;
 }
@@ -1053,7 +1059,7 @@ static ssize_t emi_mpu_store(struct device_driver *driver,
 	if (!command)
 		return count;
 
-	strcpy(command, buf);
+	strncpy(command, buf, MAX_EMI_MPU_STORE_CMD_LEN);
 	ptr = (char *)buf;
 
 	if (!strncmp(buf, EN_MPU_STR, strlen(EN_MPU_STR))) {
@@ -1078,6 +1084,7 @@ static ssize_t emi_mpu_store(struct device_driver *driver,
 
 		if (ret) {
 			pr_err("fail to parse command.\n");
+			kfree(command);
 			return -1;
 		}
 
@@ -1103,6 +1110,7 @@ static ssize_t emi_mpu_store(struct device_driver *driver,
 
 		if (ret) {
 			pr_err("fail to parse command.\n");
+			kfree(command);
 			return -1;
 		}
 
@@ -1161,7 +1169,6 @@ static int __init emi_mpu_mod_init(void)
 	}
 
 	emi_physical_offset = 0x40000000;
-	spin_lock_init(&emi_mpu_lock);
 
 	protect_ap_region();
 

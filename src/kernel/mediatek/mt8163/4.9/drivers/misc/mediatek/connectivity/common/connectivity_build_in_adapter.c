@@ -50,6 +50,7 @@
 #include <sdio_ops.h>
 
 #include "mtk_spm_resource_req.h"
+#include <linux/mm.h>
 
 #ifdef CONFIG_ARCH_MT6570
 #define CPU_BOOST y
@@ -67,6 +68,9 @@
 #ifdef CPU_BOOST
 #include "mtk_ppm_api.h"
 #endif
+
+#include <linux/fdtable.h>
+#include <linux/fs.h>
 
 phys_addr_t gConEmiPhyBase;
 EXPORT_SYMBOL(gConEmiPhyBase);
@@ -337,3 +341,122 @@ void connectivity_export_dump_thread_state(const char *name)
 	rcu_read_unlock();
 }
 EXPORT_SYMBOL(connectivity_export_dump_thread_state);
+
+
+int conn_export_file_opened_by_task(struct task_struct *task,
+	struct file *file)
+{
+	struct files_struct *files;
+	unsigned int fd;
+	int ret = -1;
+
+	files = get_files_struct(task);
+	if (!files)
+		return ret;
+
+	for (fd = 3; fd < files_fdtable(files)->max_fds; fd++) {
+		if (fcheck_files(files, fd) == file) {
+			ret = 0;
+			break;
+		}
+	}
+	put_files_struct(files);
+	return ret;
+}
+EXPORT_SYMBOL(conn_export_file_opened_by_task);
+
+void conn_export_read_task_name(struct task_struct *task, char *pcName, unsigned char name_size)
+{
+	char aucBuf[128] = {0};
+	char *pucBuf = &aucBuf[0];
+	struct mm_struct *mm;
+	unsigned long count = 127;
+	unsigned long arg_start, arg_end, env_start, env_end;
+	unsigned long len1, len2, len;
+	unsigned long p;
+	char c;
+	unsigned char fgDone = 0;
+#define READ_VM() \
+	do {\
+		while (count > 0 && len > 0 && !fgDone) {\
+			unsigned int _count, l;\
+			int nr_read;\
+\
+			_count = min(count, len);\
+			nr_read = access_remote_vm(mm, p, pucBuf, _count, 0);\
+			if (nr_read <= 0)\
+				break;\
+			l = strnlen(pucBuf, nr_read);\
+			if (l < nr_read) {\
+				nr_read = l;\
+				fgDone = 1;\
+			}\
+			p	+= nr_read;\
+			len -= nr_read;\
+			pucBuf += nr_read;\
+			count	-= nr_read;\
+		}\
+	} while (0)
+
+	mm = get_task_mm(task);
+	if (!mm)
+		goto use_comm;
+	/* Check if process spawned far enough to have cmdline. */
+	if (!mm->env_end) {
+		goto use_comm;
+	}
+
+	down_read(&mm->mmap_sem);
+	arg_start = mm->arg_start;
+	arg_end = mm->arg_end;
+	env_start = mm->env_start;
+	env_end = mm->env_end;
+	up_read(&mm->mmap_sem);
+
+	BUG_ON(arg_start > arg_end);
+	BUG_ON(env_start > env_end);
+
+	len1 = arg_end - arg_start;
+	len2 = env_end - env_start;
+
+	/* Empty ARGV. */
+	if (len1 == 0) {
+		pr_info("argv length is 0\n");
+		goto use_comm;
+	}
+	/* Read last byte of argv */
+	if (access_remote_vm(mm, arg_end - 1, &c, 1, 0) <= 0)
+		goto use_comm;
+
+	/* Read argv */
+	p = arg_start;
+	len = len1;
+	READ_VM();
+	/* Read Env args */
+	if (c != '\0' && len2 > 0 && !fgDone) {
+		pr_info("read env\n");
+		p = env_start;
+		len = len2;
+		READ_VM();
+	}
+
+use_comm:
+	if (mm)
+		mmput(mm);
+
+	if (pucBuf != &aucBuf[0]) {
+		pucBuf = strchr(aucBuf, ' ');
+		if (pucBuf)
+			*pucBuf = '\0';
+		pucBuf = strrchr(aucBuf, '/');
+		if (!pucBuf)
+			pucBuf = &aucBuf[0];
+		else
+			pucBuf++;
+		strncpy(pcName, pucBuf, name_size);
+	} else {
+		pr_info("No cmdline, using comm %s, %d\n", task->comm, aucBuf[0]);
+		strncpy(pcName, task->comm, name_size);
+	}
+}
+EXPORT_SYMBOL(conn_export_read_task_name);

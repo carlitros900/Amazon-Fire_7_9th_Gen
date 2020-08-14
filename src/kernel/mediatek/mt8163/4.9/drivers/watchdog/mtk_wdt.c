@@ -192,6 +192,7 @@ static void toprgu_register_reset_controller(struct platform_device *pdev, int r
 		pr_err("could not register toprgu reset controller: %d\n", ret);
 }
 
+int __attribute__((weak)) rtc_mark_quiescent(int value) { return 0; }
 static int mtk_reset_handler(struct notifier_block *this, unsigned long mode,
 				void *cmd)
 {
@@ -215,7 +216,7 @@ static int mtk_reset_handler(struct notifier_block *this, unsigned long mode,
 
 	if (cmd && (strcmp(cmd, "rpmbp") == 0)) {
 		iowrite32(ioread32(wdt_base + WDT_NONRST_REG2) | (1U << 0), wdt_base + WDT_NONRST_REG2);
-	} else if (cmd && (strcmp(cmd, "recovery") == 0)) {
+	} else if (cmd && (strstr(cmd,"recovery"))) {
 		iowrite32(ioread32(wdt_base + WDT_NONRST_REG2) | (1U << 1), wdt_base + WDT_NONRST_REG2);
 		#ifdef CONFIG_MT6397_MISC
 		mtk_misc_mark_recovery();
@@ -246,6 +247,14 @@ static int mtk_reset_handler(struct notifier_block *this, unsigned long mode,
 		 */
 		writel(__raw_readl(wdt_base + WDT_MODE) | WDT_MODE_AUTO_START | WDT_MODE_KEY,
 			wdt_base + WDT_MODE);
+	}
+
+
+	if (cmd && (strstr(cmd, "quiescent"))) {
+		rtc_mark_quiescent(1);
+
+	} else {
+		rtc_mark_quiescent(0);
 	}
 
 	if (!arm_pm_restart) {
@@ -516,6 +525,9 @@ static int mtk_wdt_probe(struct platform_device *pdev)
 	tmp &= ~((1U << 18) | (1U << 0));
 	tmp |= WDT_REQ_IRQ_KEY;
 	iowrite32(tmp, mtk_wdt->wdt_base + WDT_REQ_IRQ_EN);
+
+        /* clear quiescent mode*/
+	rtc_mark_quiescent(0);
 
 	return 0;
 }

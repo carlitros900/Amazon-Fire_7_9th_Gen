@@ -71,6 +71,8 @@
 #include "display_recorder.h"
 
 #include "mtk_disp_mgr.h"
+#include "mtk_sync.h"
+#include "mtkfb_fence.h"
 
 #include "compat_mtk_disp_mgr.h"
 #include "ddp_mmp.h"
@@ -477,10 +479,26 @@ int _ioctl_trigger_session(unsigned long arg)
 	if (session_info)
 		dprec_start(&session_info->event_trigger, 0, 0);
 
-	DISPPR_FENCE("T+/%s%d\n", disp_session_mode_spy(session_id),
-		     DISP_SESSION_DEV(session_id));
+	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY) {
+		DISPPR_FENCE("T+/%s%d/%d/dct:%d\n",
+				disp_session_mode_spy(session_id),
+				DISP_SESSION_DEV(session_id),
+				config.present_fence_idx,
+				config.dc_type);
+	} else
+		DISPPR_FENCE("T+/%s%d\n", disp_session_mode_spy(session_id),
+			     DISP_SESSION_DEV(session_id));
 
 	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY) {
+		if (config.present_fence_idx != -1) {
+			primary_display_update_present_fence(
+					config.present_fence_idx);
+			mmprofile_log_ex(
+					ddp_mmp_get_events()->present_fence_set,
+					MMPROFILE_FLAG_PULSE,
+					config.present_fence_idx,
+					0);
+		}
 		primary_display_trigger(0, NULL, 0);
 	} else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_EXTERNAL) {
 #ifdef CONFIG_MTK_HDMI_SUPPORT
@@ -508,6 +526,119 @@ int _ioctl_trigger_session(unsigned long arg)
 	return ret;
 }
 
+/* create fence for present fence */
+#if 0				/* use separate timeline */
+int _ioctl_prepare_present_fence(unsigned long arg)
+{
+	int ret = 0;
+	void __user *argp = (void __user *)arg;
+	struct fence_data data;
+	static struct sw_sync_timeline *timeline;
+	static unsigned int fence_idx;
+
+	if (timeline == NULL) {
+		timeline = timeline_create("present_fence_timeline");
+		if (timeline)
+			DISPMSG("create present_fence_timeline success: %p\n",
+					timeline);
+		else
+			DISPERR("create present_fence_timeline failed!\n");
+	}
+	/* create fence */
+	data.fence = MTK_FB_INVALID_FENCE_FD;
+	data.value = ++fence_idx;
+	ret = fence_create(timeline, &data);
+	if (ret != 0) {
+		DISPMSG(
+			"%s%d, layer%d create Fence Object failed!\n",
+			disp_session_mode_spy(session_id),
+			DISP_SESSION_DEV(session_id),
+			timeline_id);
+		ret = -EFAULT;
+	}
+
+	if (copy_to_user(argp, &data, sizeof(struct fence_data))) {
+		pr_debug("[FB Driver]: copy_to_user failed! line:%d\n",
+				__LINE__);
+		ret = -EFAULT;
+	}
+
+	return ret;
+}
+#else
+/* extern disp_sync_info *_get_sync_info(
+ *		unsigned int session_id,
+ *		unsigned int timeline_id);
+ */
+int _ioctl_prepare_present_fence(unsigned long arg)
+{
+	int ret = 0;
+
+	void __user *argp = (void __user *)arg;
+	struct fence_data data;
+	struct disp_present_fence preset_fence_struct;
+	static unsigned int fence_idx;
+	struct disp_sync_info *layer_info = NULL;
+
+	if (copy_from_user(&preset_fence_struct,
+		(void __user *)arg,
+		sizeof(struct disp_present_fence))) {
+		pr_debug("[FB Driver]: copy_from_user failed! line:%d\n",
+				__LINE__
+				);
+		return -EFAULT;
+	}
+
+	if (DISP_SESSION_TYPE(preset_fence_struct.session_id)
+				!= DISP_SESSION_PRIMARY) {
+		pr_debug("non-primary ask for present fence! session=0x%x\n",
+			preset_fence_struct.session_id);
+		data.fence = MTK_FB_INVALID_FENCE_FD;
+		data.value = 0;
+	} else {
+		layer_info =
+		    _get_sync_info(preset_fence_struct.session_id,
+				   disp_sync_get_present_timeline_id());
+		if (layer_info == NULL) {
+			DISPERR("layer_info is null\n");
+			ret = -EFAULT;
+			return ret;
+		}
+		/* create fence */
+		data.fence = MTK_FB_INVALID_FENCE_FD;
+		data.value = ++fence_idx;
+		ret = fence_create(layer_info->timeline, &data);
+		if (ret != 0) {
+			DISPMSG("%s%d,layer%d create fence failed!\n",
+				disp_session_mode_spy(
+					preset_fence_struct.session_id),
+				DISP_SESSION_DEV(
+					preset_fence_struct.session_id),
+				disp_sync_get_present_timeline_id());
+			ret = -EFAULT;
+		}
+	}
+
+	preset_fence_struct.present_fence_fd = data.fence;
+	preset_fence_struct.present_fence_index = data.value;
+	if (copy_to_user(argp,
+			&preset_fence_struct,
+			sizeof(preset_fence_struct))) {
+		pr_debug("[FB Driver]: copy_to_user failed! line:%d\n",
+				__LINE__);
+		ret = -EFAULT;
+	}
+	mmprofile_log_ex(ddp_mmp_get_events()->present_fence_get,
+			MMPROFILE_FLAG_PULSE,
+			preset_fence_struct.present_fence_fd,
+			preset_fence_struct.present_fence_index);
+
+	return ret;
+}
+
+#endif
+
+
 int _ioctl_prepare_buffer(unsigned long arg, enum ePREPARE_FENCE_TYPE type)
 {
 	int ret = 0;
@@ -523,8 +654,10 @@ int _ioctl_prepare_buffer(unsigned long arg, enum ePREPARE_FENCE_TYPE type)
 
 	if (type == PREPARE_INPUT_FENCE)
 		;
-	else if (type == PREPARE_PRESENT_FENCE)
+	else if (type == PREPARE_PRESENT_FENCE) {
 		info.layer_id = disp_sync_get_present_timeline_id();
+		/*info.layer_en = 0;*/
+	}
 	else if (type == PREPARE_OUTPUT_FENCE)
 		info.layer_id = disp_sync_get_output_timeline_id();
 	else
@@ -1087,9 +1220,13 @@ static int set_memory_buffer(struct disp_session_input_config *input)
 
 		if (input->config[i].layer_enable) {
 			mtkfb_update_buf_info(input->session_id,
-					      input->config[i].layer_id,
-					      input->config[i].next_buff_idx, 0,
-					      input->config[i].frm_sequence);
+				input->config[i].layer_id,
+				input->config[i].next_buff_idx, 0,
+				input->config[i].frm_sequence
+				#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+				, dst_mva, input->config[i].security
+				#endif
+				);
 		}
 
 		if (session_info) {
@@ -1230,7 +1367,11 @@ static int set_external_buffer(struct disp_session_input_config *input)
 			mtkfb_update_buf_info(
 				input->session_id, input->config[i].layer_id,
 				input->config[i].next_buff_idx, mva_offset,
-				input->config[i].frm_sequence);
+				input->config[i].frm_sequence
+				#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+				, dst_mva, input->config[i].security
+				#endif
+				);
 		}
 
 		if (session_info) {
@@ -1363,7 +1504,11 @@ static int set_primary_buffer(struct disp_session_input_config *input)
 			mtkfb_update_buf_info(
 				input->session_id, input->config[i].layer_id,
 				input->config[i].next_buff_idx, mva_offset,
-				input->config[i].frm_sequence);
+				input->config[i].frm_sequence
+				#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+				, dst_mva, input->config[i].security
+				#endif
+				);
 
 			DISPPR_FENCE(
 				"S+/PL%d/e%d/id%d/%dx%d(%d,%d)(%d,%d)/%s/%d/0x%p/mva0x%08x/sec%d\n",
@@ -1451,50 +1596,66 @@ int _ioctl_set_input_buffer(unsigned long arg)
 	int ret = 0;
 	void __user *argp = (void __user *)arg;
 	unsigned int session_id = 0;
-	struct disp_session_sync_info *session_info;
-	struct disp_session_input_config session_input;
+	struct disp_session_sync_info *session_info = NULL;
+	struct disp_session_input_config *s_session_input = NULL;
 
-	if (copy_from_user(&session_input, argp, sizeof(session_input))) {
-		DISPMSG("[FB]: copy_from_user failed! line:%d\n", __LINE__);
+	s_session_input = kmalloc(
+				sizeof(struct disp_session_input_config),
+				GFP_KERNEL);
+	if (s_session_input == NULL) {
+		DISPERR("session input config alloc failed!\n");
 		return -EFAULT;
 	}
 
-	if (_disp_validate_session_input_params(&session_input) == -1)
+	if (copy_from_user(s_session_input,
+				argp,
+				sizeof(struct disp_session_input_config))) {
+		DISPMSG("[FB]: copy_from_user failed! line:%d\n", __LINE__);
+		kfree(s_session_input);
 		return -EFAULT;
+	}
 
-	session_input.setter = SESSION_USER_HWC;
-	session_id = session_input.session_id;
+	if (_disp_validate_session_input_params(s_session_input) == -1) {
+		kfree(s_session_input);
+		return -EFAULT;
+	}
 
-	if (session_input.config_layer_num > OVL_LAYER_NUM) {
+	s_session_input->setter = SESSION_USER_HWC;
+	session_id = s_session_input->session_id;
+
+	if (s_session_input->config_layer_num > OVL_LAYER_NUM) {
 		DISPERR("set_input_buffer, config_layer_num invalid = %d!\n",
-			session_input.config_layer_num);
+			s_session_input->config_layer_num);
+		kfree(s_session_input);
 		return -1;
 	}
 
 	session_info = disp_get_session_sync_info_for_debug(session_id);
 	if (session_info)
 		dprec_start(&session_info->event_setinput, 0,
-			    session_input.config_layer_num);
+			    s_session_input->config_layer_num);
 
 	DISPPR_FENCE("S+/%s%d/count%d\n", disp_session_mode_spy(session_id),
 		     DISP_SESSION_DEV(session_id),
-		     session_input.config_layer_num);
+		     s_session_input->config_layer_num);
 
 	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY) {
-		ret = set_primary_buffer(&session_input);
+		ret = set_primary_buffer(s_session_input);
 	} else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_EXTERNAL) {
-		ret = set_external_buffer(&session_input);
+		ret = set_external_buffer(s_session_input);
 	} else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_MEMORY) {
-		ret = set_memory_buffer(&session_input);
+		ret = set_memory_buffer(s_session_input);
 	} else {
 		DISPERR("session type is wrong:0x%08x\n", session_id);
+		kfree(s_session_input);
 		return -1;
 	}
 
 	if (session_info)
 		dprec_done(&session_info->event_setinput, 0,
-			   session_input.config_layer_num);
+			   s_session_input->config_layer_num);
 
+	kfree(s_session_input);
 	return ret;
 }
 
@@ -1721,7 +1882,11 @@ int _ioctl_set_output_buffer(unsigned long arg)
 			session_output.session_id,
 			disp_sync_get_output_interface_timeline_id(),
 			session_output.config.buff_idx, 0,
-			session_output.config.frm_sequence);
+			session_output.config.frm_sequence
+			#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+			, dst_mva, session_output.config.security
+			#endif
+			);
 		if (session_info) {
 			dprec_submit(&session_info->event_setoutput,
 				     session_output.config.buff_idx, dst_mva);
@@ -1779,9 +1944,13 @@ int _ioctl_set_output_buffer(unsigned long arg)
 				session_output.config.buff_idx);
 
 		mtkfb_update_buf_info(session_output.session_id,
-				      disp_sync_get_output_timeline_id(),
-				      session_output.config.buff_idx, 0,
-				      session_output.config.frm_sequence);
+			disp_sync_get_output_timeline_id(),
+			session_output.config.buff_idx, 0,
+			session_output.config.frm_sequence
+			#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+			, dst_mva, session_output.config.security
+			#endif
+			);
 
 		if (session_info) {
 			dprec_submit(&session_info->event_setoutput,
@@ -1912,6 +2081,19 @@ int _ioctl_get_display_caps(unsigned long arg)
 #else
 	caps_info.max_layer_num = 4;
 #endif
+
+#ifdef CONFIG_MTK_LCM_PHYSICAL_ROTATION_HW
+	caps_info.is_output_rotated = 1;
+	caps_info.lcm_degree = 180;
+#endif
+
+	caps_info.disp_feature = 0;
+	caps_info.is_support_frame_cfg_ioctl = 0;
+#ifdef OVL_TIME_SHARING
+	caps_info.disp_feature |= DISP_FEATURE_TIME_SHARING;
+#endif
+
+	caps_info.disp_feature |= DISP_FEATURE_NO_PARGB;
 	DISPMSG("%s mode:%d, pass:%d, max_layer_num:%d\n", __func__,
 		caps_info.output_mode, caps_info.output_pass,
 		caps_info.max_layer_num);
@@ -2278,6 +2460,9 @@ const char *_session_ioctl_spy(unsigned int cmd)
 	case DISP_IOCTL_TRIGGER_SESSION: {
 		return "DISP_IOCTL_TRIGGER_SESSION";
 	}
+	case DISP_IOCTL_GET_PRESENT_FENCE: {
+		return "DISP_IOCTL_GET_PRESENT_FENCE";
+	}
 	case DISP_IOCTL_SET_INPUT_BUFFER: {
 		return "DISP_IOCTL_SET_INPUT_BUFFER";
 	}
@@ -2285,8 +2470,42 @@ const char *_session_ioctl_spy(unsigned int cmd)
 		return "DISP_IOCTL_PREPARE_INPUT_BUFFER";
 	}
 	case DISP_IOCTL_WAIT_FOR_VSYNC: {
-		return "DISP_IOCL_WAIT_FOR_VSYNC";
+		return "DISP_IOCTL_WAIT_FOR_VSYNC";
 	}
+	case DISP_IOCTL_GET_IS_DRIVER_SUSPEND:
+		return "DISP_IOCTL_GET_IS_DRIVER_SUSPEND";
+	case DISP_IOCTL_SET_VSYNC_FPS:
+		return "DISP_IOCTL_SET_VSYNC_FPS";
+	case DISP_IOCTL_SET_SESSION_MODE:
+		return "DISP_IOCTL_SET_SESSION_MODE";
+	case DISP_IOCTL_PREPARE_OUTPUT_BUFFER:
+		return "DISP_IOCTL_PREPARE_OUTPUT_BUFFER";
+	case DISP_IOCTL_SET_OUTPUT_BUFFER:
+		return "DISP_IOCTL_SET_OUTPUT_BUFFER";
+	case DISP_IOCTL_GET_LCMINDEX:
+		return "DISP_IOCTL_GET_LCMINDEX";
+	case DISP_IOCTL_PQ_SET_BYPASS_COLOR:
+		return "DISP_IOCTL_PQ_SET_BYPASS_COLOR";
+	case DISP_IOCTL_PQ_SET_WINDOW:
+		return "DISP_IOCTL_PQ_SET_WINDOW";
+	case DISP_IOCTL_WRITE_REG:
+		return "DISP_IOCTL_WRITE_REG";
+	case DISP_IOCTL_READ_REG:
+		return "DISP_IOCTL_READ_REG";
+	case DISP_IOCTL_MUTEX_CONTROL:
+		return "DISP_IOCTL_MUTEX_CONTROL";
+	case DISP_IOCTL_PQ_GET_TDSHP_FLAG:
+		return "DISP_IOCTL_PQ_GET_TDSHP_FLAG";
+	case DISP_IOCTL_PQ_SET_TDSHP_FLAG:
+		return "DISP_IOCTL_PQ_SET_TDSHP_FLAG";
+	case DISP_IOCTL_PQ_GET_DC_PARAM:
+		return "DISP_IOCTL_PQ_GET_DC_PARAM";
+	case DISP_IOCTL_PQ_SET_DC_PARAM:
+		return "DISP_IOCTL_PQ_SET_DC_PARAM";
+	case DISP_IOCTL_WRITE_SW_REG:
+		return "DISP_IOCTL_WRITE_SW_REG";
+	case DISP_IOCTL_READ_SW_REG:
+		return "DISP_IOCTL_READ_SW_REG";
 	case DISP_IOCTL_GET_SESSION_INFO:
 		return "DISP_IOCTL_GET_SESSION_INFO";
 	case DISP_IOCTL_AAL_EVENTCTL:
@@ -2309,6 +2528,8 @@ const char *_session_ioctl_spy(unsigned int cmd)
 		return "DISP_IOCTL_GET_PQINDEX";
 	case DISP_IOCTL_SET_PQINDEX:
 		return "DISP_IOCTL_SET_PQINDEX";
+	case DISP_IOCTL_SET_COLOR_REG:
+		return "DISP_IOCTL_SET_COLOR_REG";
 	case DISP_IOCTL_SET_TDSHPINDEX:
 		return "DISP_IOCTL_SET_TDSHPINDEX";
 	case DISP_IOCTL_GET_TDSHPINDEX:
@@ -2352,7 +2573,10 @@ long mtk_disp_mgr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		return _ioctl_trigger_session(arg);
 	}
 	case DISP_IOCTL_GET_PRESENT_FENCE: {
-		return _ioctl_prepare_buffer(arg, PREPARE_PRESENT_FENCE);
+		/* return _ioctl_prepare_buffer(arg,
+		 *			PREPARE_PRESENT_FENCE);
+		 */
+		return _ioctl_prepare_present_fence(arg);
 	}
 	case DISP_IOCTL_PREPARE_INPUT_BUFFER: {
 		return _ioctl_prepare_buffer(arg, PREPARE_INPUT_FENCE);
@@ -2388,6 +2612,7 @@ long mtk_disp_mgr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case DISP_IOCTL_GET_LCMINDEX: {
 		return primary_display_get_lcm_index();
 	}
+	case DISP_IOCTL_SET_COLOR_REG:
 	case DISP_IOCTL_AAL_EVENTCTL:
 	case DISP_IOCTL_AAL_GET_HIST:
 	case DISP_IOCTL_AAL_INIT_REG:

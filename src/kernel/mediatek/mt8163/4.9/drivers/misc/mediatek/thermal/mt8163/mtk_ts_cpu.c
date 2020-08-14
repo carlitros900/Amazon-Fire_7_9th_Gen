@@ -39,9 +39,12 @@
 #include <linux/time.h>
 #include <linux/uidgid.h>
 #include <linux/spinlock.h>
-#include <linux/platform_data/mtk_thermal.h>
 
 #include "inc/mtk_ts_cpu.h"
+
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
+#include <linux/thermal_framework.h>
+#endif
 
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 #include <linux/sign_of_life.h>
@@ -250,7 +253,11 @@ static struct thermal_cooling_device *cl_dev_adp_cpu[MAX_CPT_ADAPTIVE_COOLERS]
 #endif
 
 #if CPT_ADAPTIVE_AP_COOLER
+#if defined(CONFIG_CLATM_CHOOSE_HIGHER_TARGET_TJ)
+static int TARGET_TJS[MAX_CPT_ADAPTIVE_COOLERS] = { 55000, 0 };
+#else
 static int TARGET_TJS[MAX_CPT_ADAPTIVE_COOLERS] = { 85000, 0 };
+#endif
 static int PACKAGE_THETA_JA_RISES[MAX_CPT_ADAPTIVE_COOLERS] = { 35, 0 };
 static int PACKAGE_THETA_JA_FALLS[MAX_CPT_ADAPTIVE_COOLERS] = { 25, 0 };
 static int MINIMUM_CPU_POWERS[MAX_CPT_ADAPTIVE_COOLERS] = { 1200, 0 };
@@ -599,7 +606,7 @@ static int thermal_direct_mode_config(bool en, bool mode)
 
 
 #if THERMAL_DRV_UPDATE_TEMP_DIRECT_TO_MET
-static int a_tscpu_all_temp[THERMAL_SENSOR_NUM] = { 0 };
+static int a_tscpu_all_temp[MTK_THERMAL_SENSOR_CPU_COUNT] = { 0 };
 
 static DEFINE_MUTEX(MET_GET_TEMP_LOCK);
 static met_thermalsampler_funcMET g_pThermalSampler;
@@ -1489,7 +1496,8 @@ static int init_cooler(void)
 		return -ENOMEM;
 
 	for (i = 0; i < num; i++) /* using index=>0=700,1=800 ~ 33=4000 */
-		sprintf(cooler_name + (i * 20), "cpu%02d", i);
+		if (sprintf(cooler_name + (i * 20), "cpu%02d", i) <= 0)
+			return -1;
 
 	Num_of_OPP = num;	/* CPU COOLER COUNT, not CPU OPP count */
 	return 0;
@@ -2381,15 +2389,9 @@ static int tscpu_thermal_notify(struct thermal_zone_device *thermal,
 	char buf[TSCPU_METRICS_STR_LEN];
 #endif
 
-	if (type == THERMAL_TRIP_CRITICAL) {
-		pr_err("%s: thermal_shutdown notify\n", __func__);
-		last_kmsg_thermal_shutdown();
-		pr_err("%s: thermal_shutdown notify end\n", __func__);
-	}
-
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 	if (type == THERMAL_TRIP_CRITICAL) {
-		tscpu_printk(
+		pr_err(
 			"[%s] Thermal shutdown CPU, temp=%d, trip=%d\n",
 			__func__, thermal->temperature, trip);
 		life_cycle_set_thermal_shutdown_reason(
@@ -2397,13 +2399,21 @@ static int tscpu_thermal_notify(struct thermal_zone_device *thermal,
 	}
 #endif
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
 	if (type == THERMAL_TRIP_CRITICAL) {
+		pr_err("%s: thermal_shutdown notify\n", __func__);
+		last_kmsg_thermal_shutdown();
+		pr_err("%s: thermal_shutdown notify end\n", __func__);
+	}
+#endif
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	if (type == THERMAL_TRIP_CRITICAL &&
 		snprintf(buf, TSCPU_METRICS_STR_LEN,
 			"%s:tscpumonitor=1;CT;1,temp=%d;CT;1,trip=%d;CT;1:NR",
-			PREFIX, thermal->temperature, trip);
+			PREFIX, thermal->temperature, trip) > 0)
 		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-	}
+
 #endif
 
 	return 0;
@@ -2861,12 +2871,20 @@ static int decide_ttj(void)
 {
 	int i = 0;
 	int active_cooler_id = -1;
+#if defined(CONFIG_CLATM_CHOOSE_HIGHER_TARGET_TJ)
+	int ret = 50000;	/* lowest allowable TJ */
+#else
 	int ret = 117000;	/* highest allowable TJ */
+#endif
 	int temp_cl_dev_adp_cpu_state_active = 0;
 
 	for (; i < MAX_CPT_ADAPTIVE_COOLERS; i++) {
 		if (cl_dev_adp_cpu_state[i]) {
+#if defined(CONFIG_CLATM_CHOOSE_HIGHER_TARGET_TJ)
+			ret = MAX(ret, TARGET_TJS[i]);
+#else
 			ret = MIN(ret, TARGET_TJS[i]);
+#endif
 			temp_cl_dev_adp_cpu_state_active = 1;
 
 			if (ret == TARGET_TJS[i])
@@ -2963,9 +2981,9 @@ static int dtm_cpu_set_cur_state(struct thermal_cooling_device *cdev,
 	for (i = 0; i < Num_of_OPP; i++) {
 		if ((!strcmp(cdev->type, &cooler_name[i * 20])) &&
 			cl_dev_state[i] != state) {
-			snprintf(buf, TSCPU_METRICS_STR_LEN,
+			if (snprintf(buf, TSCPU_METRICS_STR_LEN,
 				"%s:cpumonitor_%s_cooler_state=%ld;CT;1:NR",
-				PREFIX, cdev->type, state);
+				PREFIX, cdev->type, state) > 0)
 			log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
 		}
 	}
@@ -3010,10 +3028,10 @@ static int sysrst_cpu_set_cur_state(struct thermal_cooling_device *cdev,
 
 	if (cl_dev_sysrst_state == 1) {
 		mtkts_dump_cali_info();
-		tscpu_dprintk("sysrst_cpu_set_cur_state = 1\n");
-		tscpu_dprintk("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
-		tscpu_dprintk("*****************************************\n");
-		tscpu_dprintk("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
+		pr_err("sysrst_cpu_set_cur_state = 1\n");
+		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
+		pr_err("*****************************************\n");
+		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
 
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 		life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_SOC);
@@ -3039,16 +3057,8 @@ static int adp_cpu_get_max_state(struct thermal_cooling_device *cdev,
 static int adp_cpu_get_cur_state(struct thermal_cooling_device *cdev,
 	unsigned long *state)
 {
-	int cooler_index = (cdev->type[13] - '0');
-
-	if (cooler_index >= MAX_CPT_ADAPTIVE_COOLERS
-		|| cooler_index < 0) {
-		pr_err("%s: adaptive cooler index ERROR \n", __func__);
-		return -EINVAL;
-	}
-
 	/* tscpu_dprintk("adp_cpu_get_cur_state\n"); */
-	*state = cl_dev_adp_cpu_state[cooler_index];
+	*state = cl_dev_adp_cpu_state[(cdev->type[13] - '0')];
 	/* *state = cl_dev_adp_cpu_state; */
 	return 0;
 }
@@ -3057,6 +3067,7 @@ static int adp_cpu_set_cur_state(struct thermal_cooling_device *cdev,
 	unsigned long state)
 {
 	int ttj = 117000;
+
 	int cooler_index = (cdev->type[13] - '0');
 #ifdef CONFIG_AMAZON_METRICS_LOG
 	char buf[TSCPU_METRICS_STR_LEN];
@@ -3068,12 +3079,12 @@ static int adp_cpu_set_cur_state(struct thermal_cooling_device *cdev,
 		return -EINVAL;
 	}
 #ifdef CONFIG_AMAZON_METRICS_LOG
-	if (cl_dev_adp_cpu_state[cooler_index] != state) {
+	if (cl_dev_adp_cpu_state[cooler_index] != state &&
 		snprintf(buf, TSCPU_METRICS_STR_LEN,
 			"%s:cpumonitor_%s_cooler_state=%ld;CT;1:NR",
-			PREFIX, cdev->type, state);
+			PREFIX, cdev->type, state) > 0)
 		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-	}
+
 #endif
 
 	cl_dev_adp_cpu_state[cooler_index] = state;
@@ -3885,8 +3896,8 @@ static ssize_t tscpu_write(struct file *file, const char __user *buffer,
 		 */
 
 		tscpu_unregister_thermal();
-
-
+		if (num_trip < 0 || num_trip > 10)
+			return -EINVAL;
 		for (i = 0; i < num_trip; i++)
 			g_THERMAL_TRIP[i] = t_type[i];
 
@@ -4818,7 +4829,7 @@ static enum hrtimer_restart tscpu_update_tempinfo(struct hrtimer *timer)
 {
 	ktime_t ktime;
 	unsigned long flags;
-	int resume_ok = 0;
+	static int resume_ok;
 	/* tscpu_printk("tscpu_update_tempinfo\n"); */
 	tscpu_dprintk("%s: g_tc_resume=%d\n", __func__, g_tc_resume);
 

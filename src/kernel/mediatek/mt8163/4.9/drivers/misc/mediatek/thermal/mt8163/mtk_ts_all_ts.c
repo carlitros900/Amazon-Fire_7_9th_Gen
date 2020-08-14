@@ -750,8 +750,7 @@ static ssize_t tsallts_write1(struct file *file, const char __user *buffer,
 			"[tsallts_write1] tsallts_unregister_thermal\n");
 		tsallts_unregister_thermal();
 
-
-		if (num_trip < 0)
+		if (num_trip < 0 || num_trip > 10)
 			return -EINVAL;
 
 		for (i = 0; i < num_trip; i++)
@@ -852,7 +851,7 @@ static ssize_t tsallts_write5(struct file *file, const char __user *buffer,
 			"[tsallts_write5] tsallts_unregister_thermal\n");
 		tsallts_unregister_thermal();
 
-		if (num_trip < 0)
+		if (num_trip < 0 || num_trip > 10)
 			return -EINVAL;
 
 		for (i = 0; i < num_trip; i++)
@@ -953,7 +952,7 @@ static ssize_t tsallts_write3(struct file *file, const char __user *buffer,
 			"[tsallts_write3] tsallts_unregister_thermal\n");
 		tsallts_unregister_thermal();
 
-		if (num_trip < 0)
+		if (num_trip < 0 || num_trip > 10)
 			return -EINVAL;
 
 		for (i = 0; i < num_trip; i++)
@@ -1053,7 +1052,7 @@ static ssize_t tsallts_write4(struct file *file,
 			"[tsallts_write4] tsallts_unregister_thermal\n");
 		tsallts_unregister_thermal();
 
-		if (num_trip < 0)
+		if (num_trip < 0 || num_trip > 10)
 			return -EINVAL;
 
 		for (i = 0; i < num_trip; i++)

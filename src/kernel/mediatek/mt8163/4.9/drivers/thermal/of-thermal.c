@@ -142,27 +142,13 @@ EXPORT_SYMBOL_GPL(of_thermal_get_ntrips);
  *
  * This function is a globally visible wrapper to set number of trip points
  * stored in the local struct __thermal_zone
- *
- * Return: 0 on scuccess,
- *         -ENODEV when data is not available,
- *         -EINVAL when trips is greater than supported trips.
  */
-static int of_thermal_set_ntrips(struct thermal_zone_device *tz, unsigned int trips)
+void of_thermal_set_ntrips(struct thermal_zone_device *tz, unsigned int trips)
 {
 	struct __thermal_zone *data = tz->devdata;
 
-	if (!data || IS_ERR(data))
-		return -ENODEV;
-
-	if (trips > THERMAL_MAX_TRIPS) {
-		pr_err("Trips(%u) is more than maximum supported trips(%u)\n",
-			trips, THERMAL_MAX_TRIPS);
-		return -EINVAL;
-	}
-
+	tz->trips = trips;
 	data->ntrips = trips;
-
-	return 0;
 }
 EXPORT_SYMBOL_GPL(of_thermal_set_ntrips);
 #endif
@@ -431,9 +417,7 @@ static struct thermal_zone_device_ops of_thermal_ops = {
 	.get_trip_hyst = of_thermal_get_trip_hyst,
 	.set_trip_hyst = of_thermal_set_trip_hyst,
 	.get_crit_temp = of_thermal_get_crit_temp,
-#ifdef CONFIG_AMAZON_THERMAL
-	.set_ntrips = of_thermal_set_ntrips,
-#endif
+
 	.bind = of_thermal_bind,
 	.unbind = of_thermal_unbind,
 };
@@ -910,14 +894,10 @@ __init *thermal_of_build_thermal_zone(struct device_node *np)
 		goto finish;
 
 	tz->ntrips = of_get_child_count(child);
-	/* must have at least one child */
-	if (tz->ntrips == 0  || tz->ntrips > THERMAL_MAX_TRIPS) {
-		pr_err("Unsupported number of trips(%d)\n", tz->ntrips);
+	if (tz->ntrips == 0) /* must have at least one child */
 		goto finish;
-	}
 
-	/* Allocate for maximum trips as ntrips can increase from userspace */
-	tz->trips = kzalloc(THERMAL_MAX_TRIPS * sizeof(*tz->trips), GFP_KERNEL);
+	tz->trips = kzalloc(tz->ntrips * sizeof(*tz->trips), GFP_KERNEL);
 	if (!tz->trips) {
 		ret = -ENOMEM;
 		goto free_tz;

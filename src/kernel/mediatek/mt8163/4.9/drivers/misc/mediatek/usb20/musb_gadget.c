@@ -122,12 +122,20 @@ static inline void map_dma_buffer(struct musb_request *request,
 #endif
 
 	if (request->request.dma == DMA_ADDR_INVALID) {
-		request->request.dma = dma_map_single(musb->controller,
+		dma_addr_t dma_addr;
+		int ret;
+
+		dma_addr = dma_map_single(musb->controller,
 						      request->request.buf,
 						      length,
 						      request->tx
-						      ? DMA_TO_DEVICE :
-						      DMA_FROM_DEVICE);
+						      ? DMA_TO_DEVICE
+						      : DMA_FROM_DEVICE);
+		ret = dma_mapping_error(musb->controller, dma_addr);
+		if (ret)
+			return;
+
+		request->request.dma = dma_addr;
 		request->map_state = MUSB_MAPPED;
 	} else {
 		dma_sync_single_for_device(musb->controller,
@@ -180,9 +188,8 @@ static inline void unmap_dma_buffer(struct musb_request *request,
  */
 void musb_g_giveback(struct musb_ep *ep,
 		     struct usb_request *request,
-		     int status) __releases(ep->musb->lock) __acquires(ep->
-								       musb->
-								       lock)
+		     int status) __releases(ep->musb->lock)
+		     __acquires(ep->musb->lock)
 {
 	struct musb_request *req;
 	struct musb *musb;
@@ -197,16 +204,28 @@ void musb_g_giveback(struct musb_ep *ep,
 
 	ep->busy = 1;
 	spin_unlock(&musb->lock);
-	unmap_dma_buffer(req, musb);
+
+	if (!request) {
+		DBG(0, "%s request already free\n", ep->end_point.name);
+		goto lock;
+	}
+
+	if (!dma_mapping_error(musb->controller, request->dma))
+		unmap_dma_buffer(req, musb);
+	else if (req->epnum != 0)
+		DBG(0, "%s dma_mapping_error\n", ep->end_point.name);
+
 	if (request->status == 0)
 		DBG(1, "%s done request %p,  %d/%d\n",
-		    ep->end_point.name, request, req->request.actual,
+		    ep->end_point.name, request,
+		    req->request.actual,
 		    req->request.length);
 	else
 		DBG(1, "%s request %p, %d/%d fault %d\n",
 		    ep->end_point.name, request,
 		    req->request.actual, req->request.length, request->status);
-	req->request.complete(&req->ep->end_point, &req->request);
+	usb_gadget_giveback_request(&req->ep->end_point, &req->request);
+lock:
 	spin_lock(&musb->lock);
 	ep->busy = busy;
 }
@@ -2493,7 +2512,6 @@ static int musb_gadget_start(struct usb_gadget *g,
 {
 	struct musb *musb = gadget_to_musb(g);
 	struct usb_otg *otg = musb->xceiv->otg;
-	struct usb_hcd *hcd = musb_to_hcd(musb);
 	unsigned long flags;
 	int retval = 0;
 
@@ -2522,17 +2540,9 @@ static int musb_gadget_start(struct usb_gadget *g,
 	 * handles power budgeting ... this way also
 	 * ensures HdrcStart is indirectly called.
 	 */
-	retval = usb_add_hcd(hcd, 0, 0);
-	if (retval < 0) {
-		DBG(2, "add_hcd failed, %d\n", retval);
-		goto err;
-	}
-
 	if ((musb->xceiv->last_event == USB_EVENT_ID)
 	    && otg->set_vbus)
 		otg_set_vbus(otg, 1);
-
-	hcd->self.uses_pio_for_control = 1;
 
 	if (musb->xceiv->last_event == USB_EVENT_NONE)
 		pm_runtime_put(musb->controller);
@@ -2543,6 +2553,7 @@ err:
 	return retval;
 }
 
+#ifdef CONFIG_USB_G_ANDROID
 static void stop_activity(struct musb *musb, struct usb_gadget_driver *driver)
 {
 	int i;
@@ -2579,6 +2590,7 @@ static void stop_activity(struct musb *musb, struct usb_gadget_driver *driver)
 		}
 	}
 }
+#endif
 
 /*
  * Unregister the gadget driver. Used by gadget drivers when
@@ -2608,16 +2620,18 @@ static int musb_gadget_stop(struct usb_gadget *g)
 	(void)musb_gadget_vbus_draw(&musb->g, 0);
 
 	musb->xceiv->state = OTG_STATE_UNDEFINED;
+#ifdef CONFIG_USB_G_ANDROID
 	stop_activity(musb, driver);
+#endif
 	otg_set_peripheral(musb->xceiv->otg, NULL);
 
 	DBG(0, "unregistering driver %s\n", driver->function);
 
 	musb->is_active = 0;
+	musb->gadget_driver = NULL;
 	musb_platform_try_idle(musb, 0);
 	spin_unlock_irqrestore(&musb->lock, flags);
 
-	usb_remove_hcd(musb_to_hcd(musb));
 	/*
 	 * FIXME we need to be able to register another
 	 * gadget driver here and have everything work;

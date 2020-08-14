@@ -512,6 +512,7 @@ static void mmsys_config_dump_analysis(void)
 	char *pos = NULL;
 	int len = 0;
 	unsigned int valid0, valid1, ready0, ready1, greq;
+	char *name;
 
 	pr_debug("==DISP MMSYS_CONFIG ANALYSIS==\n");
 	pr_debug("[ddp] mmsys_clock=0x%x\n",
@@ -539,17 +540,29 @@ static void mmsys_config_dump_analysis(void)
 	reg = DISP_REG_GET(DISP_REG_CONFIG_MMSYS_CG_CON0);
 
 	for (i = 0; i <= 1; i++) {
-		if ((reg & (1 << i)) == 0)
-			strcat(clock_on, ddp_clock_0(i));
+		if ((reg & (1 << i)) == 0) {
+			name = ddp_clock_0(i);
+			if (name)
+				strncat(clock_on, name,
+				(sizeof(clock_on) - strlen(clock_on) - 1));
+		}
 	}
 	for (i = 10; i <= 31; i++) {
-		if ((reg & (1 << i)) == 0)
-			strcat(clock_on, ddp_clock_0(i));
+		if ((reg & (1 << i)) == 0) {
+			name = ddp_clock_0(i);
+			if (name)
+				strncat(clock_on, name,
+				(sizeof(clock_on) - strlen(clock_on) - 1));
+		}
 	}
 	reg = DISP_REG_GET(DISP_REG_CONFIG_MMSYS_CG_CON1);
 	for (i = 0; i <= 5; i++) {
-		if ((reg & (1 << i)) == 0)
-			strcat(clock_on, ddp_clock_1(i));
+		if ((reg & (1 << i)) == 0) {
+			name = ddp_clock_1(i);
+			if (name)
+				strncat(clock_on, name,
+				(sizeof(clock_on) - strlen(clock_on) - 1));
+		}
 	}
 	DDPDUMP("clock on modules:%s\n", clock_on);
 

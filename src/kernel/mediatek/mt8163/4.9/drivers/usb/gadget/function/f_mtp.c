@@ -663,7 +663,7 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 	size_t count, loff_t *pos)
 {
 	struct mtp_dev *dev = fp->private_data;
-	struct usb_composite_dev *cdev = dev->cdev;
+	struct usb_composite_dev *cdev;
 	struct usb_request *req;
 	ssize_t r = count;
 	unsigned xfer;
@@ -689,7 +689,7 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 			skip_cnt++;
 	}
 
-	DBG(cdev, "mtp_read(%zu)\n", count);
+	pr_debug("mtp_read(%zu)\n", count);
 
 	if (true) {
 		set_cpus_allowed_ptr(current, &dev->cpu_mask);
@@ -700,13 +700,17 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 		return -EINVAL;
 
 	/* we will block until we're online */
-	DBG(cdev, "mtp_read: waiting for online state\n");
+	pr_debug("mtp_read: waiting for online state\n");
 	ret = wait_event_interruptible(dev->read_wq,
 		dev->state != STATE_OFFLINE);
 	if (ret < 0) {
 		r = ret;
 		goto done;
 	}
+
+	/* update cdev after online */
+	cdev = dev->cdev;
+
 	spin_lock_irq(&dev->lock);
 	if (dev->ep_out->desc) {
 		len = usb_ep_align_maybe(cdev->gadget, dev->ep_out, count);
@@ -777,7 +781,7 @@ done:
 		dev->state = STATE_READY;
 	spin_unlock_irq(&dev->lock);
 
-	DBG(cdev, "mtp_read returning %zd\n", r);
+	pr_debug("mtp_read returning %zd\n", r);
 	return r;
 }
 
@@ -1001,7 +1005,7 @@ static void receive_file_work(struct work_struct *data)
 	struct usb_request *read_req = NULL, *write_req = NULL;
 	struct file *filp;
 	loff_t offset;
-	int64_t count;
+	int64_t count, len;
 	int ret, cur_buf = 0;
 	int r = 0;
 	/* use this to avoid 4G copy issue */
@@ -1026,19 +1030,10 @@ static void receive_file_work(struct work_struct *data)
 			read_req = dev->rx_req[cur_buf];
 			cur_buf = (cur_buf + 1) % RX_REQ_MAX;
 
-			read_req->length = (count > mtp_rx_req_len
-					? mtp_rx_req_len : count);
-
-			if (total_size >= 0xFFFFFFFF)
-				read_req->short_not_ok = 0;
-			else {
-				if (0 == (read_req->length %
-						dev->ep_out->maxpacket))
-					read_req->short_not_ok = 1;
-				else
-					read_req->short_not_ok = 0;
-			}
-
+			len = usb_ep_align_maybe(cdev->gadget, dev->ep_out, count);
+			if (len > MTP_BULK_BUFFER_SIZE)
+				len = MTP_BULK_BUFFER_SIZE;
+			read_req->length = len;
 			dev->rx_done = 0;
 			ret = usb_ep_queue(dev->ep_out, read_req, GFP_KERNEL);
 			if (ret < 0) {

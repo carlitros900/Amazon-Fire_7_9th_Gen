@@ -83,21 +83,20 @@ unsigned int __chip_hw_code(void)
 unsigned int __chip_hw_ver(void)
 {
 	init_chip_id(__LINE__);
-	return (APHW_VER) ? readl(IOMEM(APHW_VER)) : (C_UNKNOWN_CHIP_ID);
+	return (id_base) ? readl(IOMEM(APHW_VER)) : (C_UNKNOWN_CHIP_ID);
 }
 
 unsigned int __chip_sw_ver(void)
 {
 	init_chip_id(__LINE__);
-	return (APSW_VER) ? readl(IOMEM(APSW_VER)) : (C_UNKNOWN_CHIP_ID);
+	return (id_base) ? readl(IOMEM(APSW_VER)) : (C_UNKNOWN_CHIP_ID);
 }
 EXPORT_SYMBOL(mt_get_chip_sw_ver);
 
 unsigned int __chip_hw_subcode(void)
 {
 	init_chip_id(__LINE__);
-	return (APHW_SUBCODE) ?
-		readl(IOMEM(APHW_SUBCODE)) : (C_UNKNOWN_CHIP_ID);
+	return (id_base) ? readl(IOMEM(APHW_SUBCODE)) : (C_UNKNOWN_CHIP_ID);
 }
 
 unsigned int __chip_func_code(void)

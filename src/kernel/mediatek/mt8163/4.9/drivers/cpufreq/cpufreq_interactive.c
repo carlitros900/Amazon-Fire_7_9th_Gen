@@ -1230,12 +1230,14 @@ int cpufreq_interactive_init(struct cpufreq_policy *policy)
 	if (ret)
 		goto fail;
 
+#ifndef CONFIG_CPU_FREQ_GOV_INTERACTIVE_DISABLE_IDLE_BOOST
 	/* One time initialization for governor */
 	if (!interactive_gov.usage_count++) {
 		idle_notifier_register(&cpufreq_interactive_idle_nb);
 		cpufreq_register_notifier(&cpufreq_notifier_block,
 					  CPUFREQ_TRANSITION_NOTIFIER);
 	}
+#endif
 
  out:
 	mutex_unlock(&global_tunables_lock);

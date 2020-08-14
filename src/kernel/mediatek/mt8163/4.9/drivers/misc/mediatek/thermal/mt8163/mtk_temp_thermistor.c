@@ -62,12 +62,17 @@ struct thermal_dev_node_names thermistor_node_names = {
 
 static int mtktsthermistor_read_temp(struct thermal_dev *tdev)
 {
-        struct device_node *node = tdev->dev->of_node;
-	int aux_channel;
+	struct device_node *node = tdev->dev->of_node;
+	int aux_channel = -1, temp = -117000;
 
-        of_property_read_u32(node, "aux_channel_num",
-                                        &aux_channel);
-	return mtkts_bts_get_hw_temp(aux_channel);
+	if (of_property_read_u32(node, "aux_channel_num",
+                                        &aux_channel)) {
+		pr_err("%s: Failed to get aux_channel_num\n", __func__);
+		return -EINVAL;
+	}
+
+	temp = mtkts_bts_get_hw_temp(aux_channel);
+	return temp;
 }
 
 static struct thermal_dev_ops mtktsthermistor_sensor_fops = {
@@ -78,11 +83,15 @@ static ssize_t mtktsthermistor_sensor_show_temp(struct device *dev,
 				 struct device_attribute *devattr,
 				 char *buf)
 {
-        struct device_node *node = dev->of_node;
-	int aux_channel, temp;
+	struct device_node *node = dev->of_node;
+	int aux_channel = -1, temp = -117000;
 
-        of_property_read_u32(node, "aux_channel_num",
-                                        &aux_channel);
+	if (of_property_read_u32(node, "aux_channel_num",
+                                        &aux_channel)) {
+		pr_err("%s: Failed to get aux_channel_num\n", __func__);
+		return -EINVAL;
+	}
+
 	temp = mtkts_bts_get_hw_temp(aux_channel);
 	return sprintf(buf, "%d\n", temp);
 }
@@ -159,8 +168,10 @@ static int mtktsthermistor_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	thermistor_params = devm_kzalloc(&pdev->dev, sizeof(*thermistor_params), GFP_KERNEL);
-	if (!thermistor_params)
+	if (!thermistor_params) {
+		kfree(virtual_sensor);
 		return -ENOMEM;
+	}
 
 	mutex_init(&virtual_sensor->sensor_mutex);
 	virtual_sensor->dev = &pdev->dev;
@@ -215,9 +226,9 @@ static int mtktsthermistor_remove(struct platform_device *pdev)
 {
 	struct virtual_sensor_temp_sensor *virtual_sensor = platform_get_drvdata(pdev);
 
-        if (virtual_sensor->therm_fw)
+	if (virtual_sensor && virtual_sensor->therm_fw)
 		kfree(virtual_sensor->therm_fw);
-        if (virtual_sensor)
+	if (virtual_sensor)
 		kfree(virtual_sensor);
 
 	device_remove_file(&pdev->dev, &dev_attr_params);

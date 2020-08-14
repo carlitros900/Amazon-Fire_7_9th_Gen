@@ -201,11 +201,11 @@ int32_t cmdqRecWrite(cmdqRecHandle handle, uint32_t addr, uint32_t value,
  */
 int32_t cmdq_op_write_reg_secure(cmdqRecHandle handle, uint32_t addr,
 				 enum CMDQ_SEC_ADDR_METADATA_TYPE type,
-				 uint32_t baseHandle, uint32_t offset,
+				 uint64_t baseHandle, uint32_t offset,
 				 uint32_t size, uint32_t port);
 int32_t cmdqRecWriteSecure(cmdqRecHandle handle, uint32_t addr,
 			   enum CMDQ_SEC_ADDR_METADATA_TYPE type,
-			   uint32_t baseHandle, uint32_t offset, uint32_t size,
+			   uint64_t baseHandle, uint32_t offset, uint32_t size,
 			   uint32_t port);
 
 /* tablet use */
@@ -225,9 +225,9 @@ int32_t cmdqRecWriteSecure(cmdqRecHandle handle, uint32_t addr,
 #ifdef CONFIG_MTK_CMDQ_TAB
 int32_t cmdq_op_write_reg_secure_mask(cmdqRecHandle handle, uint32_t addr,
 				      enum CMDQ_SEC_ADDR_METADATA_TYPE type,
-				      uint32_t value, uint32_t mask);
+				      uint64_t value, uint32_t mask);
 int32_t cmdqRecWriteSecureMask(cmdqRecHandle handle, uint32_t addr,
-	enum CMDQ_SEC_ADDR_METADATA_TYPE type, uint32_t value,
+	enum CMDQ_SEC_ADDR_METADATA_TYPE type, uint64_t value,
 	uint32_t mask);
 #endif
 

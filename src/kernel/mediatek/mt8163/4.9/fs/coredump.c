@@ -50,7 +50,11 @@
 
 int core_uses_pid;
 unsigned int core_pipe_limit;
+#ifdef CONFIG_SECURITY_SELINUX_KERN_PERMISSIVE
+char core_pattern[CORENAME_MAX_SIZE] = "/data/debug_service/coredump_current/core-%e-%p-%t";
+#else
 char core_pattern[CORENAME_MAX_SIZE] = "core";
+#endif
 static int core_name_size = CORENAME_MAX_SIZE;
 
 struct core_name {
@@ -591,6 +595,9 @@ late_initcall(init_coredump);
 module_exit(exit_coredump);
 #endif
 
+void __attribute__ ((weak)) selinux_set_permissive_save(void) {}
+void __attribute__ ((weak)) selinux_mode_restore(void) {}
+
 void do_coredump(const siginfo_t *siginfo)
 {
 	struct core_state core_state;
@@ -650,6 +657,8 @@ void do_coredump(const siginfo_t *siginfo)
 		goto fail_creds;
 
 	old_cred = override_creds(cred);
+
+	selinux_set_permissive_save();
 
 	ispipe = format_corename(&cn, &cprm);
 
@@ -843,6 +852,7 @@ fail_unlock:
 	kfree(cn.corename);
 	coredump_finish(mm, core_dumped);
 	revert_creds(old_cred);
+	selinux_mode_restore();
 fail_creds:
 	put_cred(cred);
 fail:

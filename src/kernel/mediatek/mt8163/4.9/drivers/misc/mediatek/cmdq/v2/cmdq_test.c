@@ -141,9 +141,8 @@ static void testcase_scenario(void)
 		cmdq_task_reset(hRec);
 		cmdq_task_set_secure(hRec, false);
 		ret = cmdq_task_flush(hRec);
+		cmdq_task_destroy(hRec);
 	}
-
-	cmdq_task_destroy(hRec);
 
 	CMDQ_MSG("%s END\n", __func__);
 }
@@ -572,9 +571,8 @@ static void testcase_async_request_partial_engine(void)
 
 		CMDQ_MSG("TEST: SUBMIT scneario %d\n", scn[i]);
 		ret = _test_submit_async(hReq, &pTasks[i]);
+		cmdq_task_destroy(hReq);
 	}
-
-	cmdq_task_destroy(hReq);
 
 	/* wait for task completion */
 	for (i = 0; i < (ARRAY_SIZE(scn)); ++i)
@@ -861,9 +859,9 @@ static void testcase_prefetch_scenarios(void)
 			cmdq_append_command(hConfig, CMDQ_CODE_MOVE, 0, 0x1);
 
 		ret = cmdq_task_flush(hConfig);
+		cmdq_task_destroy(hConfig);
 	}
 
-	cmdq_task_destroy(hConfig);
 	CMDQ_MSG("%s END\n", __func__);
 }
 
@@ -1765,6 +1763,7 @@ static void testcase_prefetch(void)
 	cmdq_task_flush_async(handle);
 	cmdq_task_flush_async(handle);
 	cmdq_task_flush_async(handle);
+	cmdq_task_destroy(handle);
 	msleep_interruptible(1000);
 
 	/* use prefetch */
@@ -2071,6 +2070,8 @@ static void testcase_module_full_dump(void)
 	/* disable full dump */
 	if (false == alreadyEnableLog)
 		cmdq_core_set_log_level(0);
+
+	cmdq_task_destroy(handle);
 
 	CMDQ_MSG("%s END\n", __func__);
 }
@@ -2589,6 +2590,7 @@ static void testcase_module_full_mdp_engine(void)
 	if (false == alreadyEnableLog)
 		cmdq_core_set_log_level(0);
 
+	cmdq_task_destroy(handle);
 	CMDQ_MSG("%s END\n", __func__);
 }
 
@@ -3502,6 +3504,7 @@ static void testcase_track_task_cb(void)
 
 	cmdqCoreRegisterTrackTaskCB(CMDQ_GROUP_MDP, NULL);
 	CMDQ_MSG("%s END\n", __func__);
+	cmdq_task_destroy(handle);
 }
 
 static void testcase_while_test_mmsys_bus(void)

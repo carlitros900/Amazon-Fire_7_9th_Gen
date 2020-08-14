@@ -31,6 +31,7 @@
 #include <linux/of_fdt.h>
 #include <linux/of_reserved_mem.h>
 #include <linux/pstore.h>
+#include <linux/pstore_ram.h>
 #include <linux/io.h>
 #include <mt-plat/aee.h>
 #include "ram_console.h"
@@ -47,7 +48,6 @@ static int ram_console_init_done;
 static unsigned int old_wdt_status;
 static int ram_console_clear;
 static bool reserve_mem_fail;
-static int ram_console_old_valid = 1;
 
 /*
  *  This group of API call by sub-driver module to report reboot reasons
@@ -519,6 +519,7 @@ static int ram_console_lastk_show(struct ram_console_buffer *buffer,
 		seq_write(m, buffer, ram_console_buffer->sz_buffer);
 	}
 #endif
+
 	return 0;
 }
 
@@ -544,6 +545,20 @@ static void aee_rr_show_in_log(void)
 	}
 }
 
+#ifdef CONFIG_MTK_LASTPC
+static void dump_lastpc(void)
+{
+	char buf[1024] = {0};
+	char *p = buf;
+
+	get_lastpc_plt_dump(p);
+	if (p) {
+		ramoops_append_plat_log("%s\n", p);
+		pr_info("Dump lastpc info\n");
+	}
+}
+#endif
+
 static int __init ram_console_save_old(struct ram_console_buffer *buffer,
 		size_t buffer_size)
 {
@@ -560,9 +575,6 @@ static int __init ram_console_save_old(struct ram_console_buffer *buffer,
 static int __init ram_console_init(struct ram_console_buffer *buffer,
 		size_t buffer_size)
 {
-	if (buffer->sz_buffer != buffer_size)
-		ram_console_old_valid = 0;
-
 	ram_console_buffer = buffer;
 	buffer->sz_buffer = buffer_size;
 
@@ -743,13 +755,13 @@ static int __init ram_console_late_init(void)
 {
 	struct proc_dir_entry *entry;
 
+#ifdef CONFIG_MTK_LASTPC
+	dump_lastpc();
+#endif
 	if (reserve_mem_fail) {
 		pr_info("ram_console/pstore wrong reserved memory\n");
 		BUG();
 	}
-
-	if (!ram_console_old_valid)
-		return 0;
 
 	entry = proc_create("last_kmsg", 0444, NULL, &ram_console_file_ops);
 	if (!entry) {

@@ -508,7 +508,7 @@ int mtk_kick_CmdQ(struct musb *musb, int isRx, struct musb_qh *qh,
 
 	if (!urb) {
 		QMU_WARN("!urb\n");
-		return -EINVAL; /*KOBE : should we return a value */
+		return -1;	/*KOBE : should we return a value */
 	}
 
 	if (!mtk_is_qmu_enabled(hw_ep->epnum, isRx)) {
@@ -608,7 +608,6 @@ int mtk_kick_CmdQ(struct musb *musb, int isRx, struct musb_qh *qh,
 			DBG(0, "gdp_free_count:%d, number_of_packets:%d\n",
 			    gdp_free_count, urb->number_of_packets);
 			WARN_ON(1);
-			return -ENOMEM;
 		}
 		for (i = 0; i < urb->number_of_packets; i++) {
 			urb->iso_frame_desc[i].status = 0;

@@ -31,7 +31,6 @@
 #include <linux/fb.h>
 
 #include "m4u.h"
-
 /* #include <mt-plat/mt_gpio.h> */
 #ifdef CONFIG_MTK_CLKMGR
 #include <mach/mt_clkmgr.h>
@@ -62,6 +61,8 @@
 #include "ddp_ovl.h"
 #include "ddp_path.h"
 #include "ddp_reg.h"
+#include "mtk_sync.h"
+#include "mtkfb_fence.h"
 
 #include "cmdq_core.h"
 #include "cmdq_def.h"
@@ -82,11 +83,10 @@
 #include <tz_cross/tz_ddp.h>
 #endif
 
-typedef void (*fence_release_callback)(unsigned int data);
+typedef int (*fence_release_callback) (unsigned int data);
 
 unsigned int is_hwc_enabled;
 
-unsigned int free_fb_buf;
 int primary_display_use_cmdq = CMDQ_DISABLE;
 int primary_display_use_m4u = 1;
 enum DISP_PRIMARY_PATH_MODE primary_display_mode = DIRECT_LINK_MODE;
@@ -106,6 +106,8 @@ static unsigned int primary_session_id =
 	MAKE_DISP_SESSION(DISP_SESSION_PRIMARY, 0);
 
 static bool disable_ddr_self_refresh_before_update;
+
+static atomic_t esd_checking = ATOMIC_INIT(0); /* For Esd Check Task */
 
 /* primary display uses itself's abs macro */
 #ifdef abs
@@ -131,6 +133,15 @@ unsigned int WDMA0_FRAME_START_FLAG;
 unsigned int NEW_BUF_IDX;
 unsigned int ALL_LAYER_DISABLE_STEP;
 unsigned long long last_primary_trigger_time = 0xffffffffffffffff;
+
+unsigned int gPresentFenceIndex;
+unsigned int pwm_level_store = 90;
+
+#ifdef CONFIG_FREE_FB_BUFFER
+#define THREATHOLD_FREE_FB (3) /*up to tripple buffers*/
+struct s_free_fb *g_free_fb;
+extern phys_addr_t  fb_base;
+#endif
 
 void enqueue_buffer(struct display_primary_path_context *ctx,
 		    struct list_head *head,
@@ -337,6 +348,43 @@ static int _disp_primary_path_idle_clock_off(unsigned int level)
 	dpmgr_path_idle_off(pgc->dpmgr_handle, NULL, level);
 	return 0;
 }
+
+#ifdef CONFIG_SINGLE_PANEL_OUTPUT
+static void primary_suspend_release_present_fence(void)
+{
+	int fence_increment = 0;
+	disp_sync_info *layer_info = NULL;
+
+	/* if session not created, do not release present fence*/
+	if (pgc->session_id == 0) {
+		DISPDBG(
+			"_get_sync_info fail in present_fence_release\n");
+		return;
+	}
+	layer_info = _get_sync_info(pgc->session_id,
+					disp_sync_get_present_timeline_id()
+					);
+
+	if (layer_info == NULL) {
+		DISPERR(
+			"_get_sync_info fail in present_fence_release\n");
+		return;
+	}
+	_primary_path_lock(__func__);
+	fence_increment = gPresentFenceIndex-layer_info->timeline->value;
+	if (fence_increment > 0) {
+		timeline_inc(layer_info->timeline, fence_increment);
+		mmprofile_log_ex(ddp_mmp_get_events()->present_fence_release,
+				MMPROFILE_FLAG_PULSE,
+				gPresentFenceIndex,
+				fence_increment);
+	}
+	_primary_path_unlock(__func__);
+	DISPPR_FENCE("RPF/%d/%d\n",
+			gPresentFenceIndex,
+			gPresentFenceIndex-layer_info->timeline->value);
+}
+#endif
 
 static int _disp_primary_path_dsi_clock_on(unsigned int level)
 {
@@ -579,7 +627,7 @@ static int _disp_primary_path_idle_detect_thread(void *data)
 			mmprofile_log_ex(ddp_mmp_get_events()->esd_check_t,
 					 MMPROFILE_FLAG_PULSE, 1, 0);
 #ifndef CONFIG_NO_DISPLAY
-			DISPCHECK(
+			DISPDBG(
 				"[ddp_idle]primary display path is slept?? -- skip ddp_idle\n"
 				);
 #endif
@@ -1358,6 +1406,11 @@ static int _build_path_direct_link(void)
 #endif
 void disp_set_sodi(unsigned int enable, void *cmdq_handle)
 {
+	if (atomic_read(&esd_checking) && enable) {
+		DISPDBG("esd checking but enable sodi!\n");
+		return;
+	}
+
 #ifdef DISP_ENABLE_SODI
 	if (gEnableSODIControl == 1) {
 		if (cmdq_handle != NULL) {
@@ -2085,7 +2138,7 @@ static int config_display_m4u_port(void)
 }
 
 #ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
-static KREE_SESSION_HANDLE secure_memory_session_handle(void)
+KREE_SESSION_HANDLE primary_display_secure_memory_session_handle(void)
 {
 	static KREE_SESSION_HANDLE disp_secure_memory_session;
 
@@ -2100,8 +2153,6 @@ static KREE_SESSION_HANDLE secure_memory_session_handle(void)
 			return 0;
 		}
 	}
-	DISPCHECK("disp_secure_memory_session_handle() session = %x\n",
-		  (unsigned int)disp_secure_memory_session);
 
 	return disp_secure_memory_session;
 }
@@ -2113,13 +2164,16 @@ allocate_decouple_sec_buffer(unsigned int buffer_size)
 	KREE_SECUREMEM_HANDLE mem_handle;
 
 	/* allocate secure buffer by tz api */
-	ret = KREE_AllocSecurechunkmem(secure_memory_session_handle(),
-				       &mem_handle, 0, buffer_size);
+	ret = KREE_AllocSecurechunkmemWithTag(
+			primary_display_secure_memory_session_handle(),
+			&mem_handle, 0, buffer_size, "primary_disp");
 	if (ret != TZ_RESULT_SUCCESS) {
-		DISPERR("KREE_AllocSecurechunkmem fail, ret = %d\n", ret);
+		DISPERR("KREE_AllocSecurechunkmemWithTag fail, ret = %d\n",
+			ret);
 		return -1;
 	}
-	DISPCHECK("KREE_AllocSecurchunkemem handle=0x%x\n", mem_handle);
+	DISPCHECK("KREE_AllocSecurechunkmemWithTag handle=0x%x\n",
+		mem_handle);
 
 	return mem_handle;
 }
@@ -2129,13 +2183,16 @@ free_decouple_sec_buffer(KREE_SECUREMEM_HANDLE mem_handle)
 {
 	int /*TZ_RESULT*/ ret;
 
-	ret = KREE_UnreferenceSecurechunkmem(secure_memory_session_handle(),
-					     mem_handle);
+	ret = KREE_UnreferenceSecurechunkmem(
+			primary_display_secure_memory_session_handle(),
+			mem_handle);
 
 	if (ret != TZ_RESULT_SUCCESS)
-		DISPERR("KREE_UnreferenceSecurechunkmem fail, ret=%d\n", ret);
+		DISPERR("KREE_UnreferenceSecurechunkmem fail, ret=%d\n",
+			ret);
 
-	DISPCHECK("KREE_UnreferenceSecurechunkmem handle=0x%x\n", mem_handle);
+	DISPCHECK("KREE_UnreferenceSecurechunkmem handle=0x%x\n",
+		mem_handle);
 
 	return ret;
 }
@@ -2145,7 +2202,7 @@ static struct disp_internal_buffer_info *allocat_decouple_buffer(int size)
 {
 	void *buffer_va = NULL;
 	unsigned int buffer_mva = 0;
-	unsigned int mva_size = 0;
+	size_t mva_size = 0;
 	struct ion_client *client = NULL;
 	struct ion_handle *handle = NULL;
 	struct disp_internal_buffer_info *buf_info = NULL;
@@ -2190,7 +2247,7 @@ static struct disp_internal_buffer_info *allocat_decouple_buffer(int size)
 		}
 
 		ion_phys(client, handle, (ion_phys_addr_t *)&buffer_mva,
-			 (size_t *)&mva_size);
+			 &mva_size);
 		if (buffer_mva == 0) {
 			DISPERR("Fatal Error, get mva failed\n");
 			ion_free(client, handle);
@@ -3188,9 +3245,7 @@ int _esd_check_config_handle_vdo(void)
 	/* 1.reset */
 	cmdqRecReset(pgc->cmdq_handle_config_esd);
 
-	/* disable SODI by CMDQ */
-	if (gESDEnableSODI == 1)
-		disp_set_sodi(0, pgc->cmdq_handle_config_esd);
+	cmdqRecWait(pgc->cmdq_handle_config_esd, CMDQ_EVENT_MUTEX0_STREAM_EOF);
 
 	/* 2.stop dsi vdo mode */
 	dpmgr_path_build_cmdq(pgc->dpmgr_handle, pgc->cmdq_handle_config_esd,
@@ -3219,7 +3274,7 @@ int _esd_check_config_handle_vdo(void)
 	ret = cmdqRecFlush(pgc->cmdq_handle_config_esd);
 	dprec_logger_done(DPREC_LOGGER_ESD_CMDQ, 0, 0);
 
-	DISPCHECK("[ESD]_esd_check_config_handle_vdo ret=%d\n", ret);
+	DISPDBG("[ESD]_esd_check_config_handle_vdo ret=%d\n", ret);
 
 	if (ret)
 		ret = 1;
@@ -3334,6 +3389,115 @@ int primary_display_switch_esd_mode(int mode)
 	return ret;
 }
 
+int do_lcm_vdo_read(struct ddp_lcm_read_cmd_table *read_table)
+{
+	int ret = 0;
+	int i = 0;
+	struct cmdqRecStruct *handle;
+
+	static cmdqBackupSlotHandle read_Slot;
+	struct rx_data rx_data0 = {0x00};
+	struct rx_data rx_data1 = {0x00};
+	/*use read_table data0 to return read value*/
+	unsigned char packet_type = 0x00;
+
+	primary_display_manual_lock();
+
+	if (pgc->state == DISP_SLEPT) {
+		DISPCHECK("primary display path is slept?? -- skip read\n");
+		primary_display_manual_unlock();
+		return -1;
+	}
+
+	/* 0.create esd check cmdq */
+	cmdqRecCreate(CMDQ_SCENARIO_DISP_ESD_CHECK, &handle);
+	cmdqBackupAllocateSlot(&read_Slot, 6);
+	for (i = 0; i < 6; i++)
+		cmdqBackupWriteSlot(read_Slot, i, 0xff00ff00);
+
+	/* 1.use cmdq to read from lcm */
+	if (primary_display_is_video_mode()) {
+
+		/* 1.reset */
+		cmdqRecReset(handle);
+
+		/* wait stream eof first */
+		/*cmdqRecWait(handle, CMDQ_EVENT_DISP_RDMA0_EOF);*/
+		cmdqRecWait(handle, CMDQ_EVENT_MUTEX0_STREAM_EOF);
+
+		#if 0
+		/* 2.stop dsi vdo mode */
+		dpmgr_path_build_cmdq(pgc->dpmgr_handle,
+			handle, CMDQ_STOP_VDO_MODE);
+		#endif
+
+		/* 3.read from lcm */
+		ddp_dsi_read_lcm_test_cmdq(DISP_MODULE_DSI0, &read_Slot, handle,
+			read_table);
+
+		/* 4.start dsi vdo mode */
+		dpmgr_path_build_cmdq(pgc->dpmgr_handle,
+			handle, CMDQ_START_VDO_MODE);
+
+		cmdqRecClearEventToken(handle, CMDQ_EVENT_MUTEX0_STREAM_EOF);
+
+		/* 5. trigger path */
+		dpmgr_path_trigger(pgc->dpmgr_handle, handle,
+			CMDQ_ENABLE);
+
+		/* 6.flush instruction */
+		ret = cmdqRecFlush(handle);
+
+	} else {
+		DISPCHECK("Not support cmd mode\n");
+	}
+
+	if (ret == 1) {	/* cmdq fail */
+		if (_need_wait_esd_eof()) {
+			/* Need set esd check eof */
+			/*synctoken to let trigger loop go. */
+			cmdqCoreSetEvent(CMDQ_SYNC_TOKEN_ESD_EOF);
+		}
+		/* do dsi reset */
+		dpmgr_path_build_cmdq(pgc->dpmgr_handle, handle,
+			 CMDQ_DSI_RESET);
+		goto DISPTORY;
+	}
+
+	for (i = 0; i < 1; i++) {
+		cmdqBackupReadSlot(read_Slot, 2*i,
+		(uint32_t *)&rx_data0);
+		cmdqBackupReadSlot(read_Slot, 2*i+1,
+		(uint32_t *)&rx_data1);
+		packet_type = rx_data0.byte0;
+
+		DISPERR("rx_data0 b0 %x, b1 %x, b2 %x, b3 = %x\n",
+			rx_data0.byte0, rx_data0.byte1, rx_data0.byte2, rx_data0.byte3);
+
+		if (packet_type == 0x1A || packet_type == 0x1C) {
+			read_table->data[i].byte0 = rx_data1.byte0;
+		} else if (packet_type == 0x11 || packet_type == 0x12 ||
+					packet_type == 0x21 || packet_type == 0x22) {
+			read_table->data[i].byte0 = rx_data0.byte1;
+		} else {
+			DISPERR("packet_type error!\n");
+		}
+	}
+
+DISPTORY:
+	if (read_Slot) {
+		cmdqBackupFreeSlot(read_Slot);
+		read_Slot = 0;
+	}
+
+	/* 7.destroy esd config thread */
+	cmdqRecDestroy(handle);
+	primary_display_manual_unlock();
+
+	return ret;
+}
+
+
 /* ESD CHECK FUNCTION */
 /* return 1: esd check fail */
 /* return 0: esd check pass */
@@ -3344,17 +3508,17 @@ int primary_display_esd_check(void)
 	dprec_logger_start(DPREC_LOGGER_ESD_CHECK, 0, 0);
 	mmprofile_log_ex(ddp_mmp_get_events()->esd_check_t,
 			 MMPROFILE_FLAG_START, 0, 0);
-	DISPCHECK("[ESD]ESD check begin\n");
+	DISPDBG("[ESD]ESD check begin\n");
 	_primary_path_lock(__func__);
 	if (pgc->state == DISP_SLEPT) {
 		mmprofile_log_ex(ddp_mmp_get_events()->esd_check_t,
 				 MMPROFILE_FLAG_PULSE, 1, 0);
-		DISPCHECK(
+		DISPDBG(
 			"[ESD]primary display path is slept?? -- skip esd check\n"
 			);
 		_primary_path_unlock(__func__);
 		/* goto done; */
-		DISPCHECK("[ESD]ESD check end\n");
+		DISPDBG("[ESD]ESD check end\n");
 		mmprofile_log_ex(ddp_mmp_get_events()->esd_check_t,
 				 MMPROFILE_FLAG_END, 0, ret);
 		dprec_logger_done(DPREC_LOGGER_ESD_CHECK, 0, 0);
@@ -3422,7 +3586,7 @@ int primary_display_esd_check(void)
 				      CMDQ_ESD_ALLC_SLOT);
 		mmprofile_log_ex(ddp_mmp_get_events()->esd_rdlcm,
 				 MMPROFILE_FLAG_PULSE, 0, 2);
-		DISPCHECK("[ESD]ESD config thread=%p\n",
+		DISPDBG("[ESD]ESD config thread=%p\n",
 			  pgc->cmdq_handle_config_esd);
 
 		/* 1.use cmdq to read from lcm */
@@ -3450,7 +3614,7 @@ int primary_display_esd_check(void)
 			goto destroy_cmdq;
 		}
 
-		DISPCHECK("[ESD]ESD config thread done~\n");
+		DISPDBG("[ESD]ESD config thread done~\n");
 
 		/* 2.check data(*cpu check now) */
 		ret = dpmgr_path_build_cmdq(pgc->dpmgr_handle,
@@ -3546,7 +3710,7 @@ done:
 #ifdef MTK_DISP_IDLE_LP
 	_disp_primary_path_dsi_clock_off(0);
 #endif
-	DISPCHECK("[ESD]ESD check end\n");
+	DISPDBG("[ESD]ESD check end\n");
 	mmprofile_log_ex(ddp_mmp_get_events()->esd_check_t, MMPROFILE_FLAG_END,
 			 0, ret);
 	dprec_logger_done(DPREC_LOGGER_ESD_CHECK, 0, 0);
@@ -3585,6 +3749,12 @@ static int primary_display_esd_check_worker_kthread(void *data)
 		wait_event_interruptible(esd_check_task_wq,
 					 atomic_read(&esd_check_task_wakeup));
 		msleep(2000); /* esd check every 2s */
+		atomic_set(&esd_checking, 1);
+		/* delay 1 frames (17ms) to avoid assemble SODI cmdq by dipslay when esd checking */
+		msleep(17);
+		/* set sodi to 0 and delay 1 frames (17ms) to ensure it exit sodi*/
+		disp_set_sodi(0,0);
+		msleep(17);
 #ifdef DISP_SWITCH_DST_MODE
 		_primary_path_switch_dst_lock();
 #endif
@@ -3634,6 +3804,7 @@ static int primary_display_esd_check_worker_kthread(void *data)
 		_primary_path_switch_dst_unlock();
 #endif
 #endif
+		atomic_set(&esd_checking, 0);
 
 		if (kthread_should_stop())
 			break;
@@ -3680,6 +3851,12 @@ int primary_display_esd_recovery(void)
 	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t,
 			 MMPROFILE_FLAG_PULSE, 0, 3);
 
+#ifdef CONFIG_LCM_SEND_CMD_IN_VIDEO
+	DISPCHECK("[POWER]lcm suspend[begin]\n");
+	disp_lcm_suspend(pgc->plcm);
+	DISPCHECK("[POWER]lcm suspend[end]\n");
+#endif
+
 	DISPCHECK("[ESD]stop dpmgr path[begin]\n");
 	dpmgr_path_stop(pgc->dpmgr_handle, CMDQ_DISABLE);
 	DISPCHECK("[ESD]stop dpmgr path[end]\n");
@@ -3708,16 +3885,23 @@ int primary_display_esd_recovery(void)
 	dpmgr_path_reset(pgc->dpmgr_handle, CMDQ_DISABLE);
 	DISPCHECK("[ESD]reset display path[end]\n");
 
+#ifndef CONFIG_LCM_SEND_CMD_IN_VIDEO
 	DISPCHECK("[POWER]lcm suspend[begin]\n");
 	disp_lcm_suspend(pgc->plcm);
 	DISPCHECK("[POWER]lcm suspend[end]\n");
+#endif
+
+	DISPCHECK("[POWER]lcm suspend power[end]\n");
+	disp_lcm_suspend_power(pgc->plcm);
+	DISPCHECK("[POWER]lcm suspend power[end]\n");
 
 	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t,
 			 MMPROFILE_FLAG_PULSE, 0, 7);
 
-	DISPCHECK("[ESD]lcm force init[begin]\n");
-	disp_lcm_init(pgc->plcm, 1);
-	DISPCHECK("[ESD]lcm force init[end]\n");
+	DISPCHECK("[ESD]lcm resume & resume power[begin]\n");
+	disp_lcm_resume_power(pgc->plcm);
+	disp_lcm_resume(pgc->plcm);
+	DISPCHECK("[ESD]lcm resume & resume power[end]\n");
 
 	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t,
 			 MMPROFILE_FLAG_PULSE, 0, 8);
@@ -3754,6 +3938,12 @@ int primary_display_esd_recovery(void)
 
 	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t,
 			 MMPROFILE_FLAG_PULSE, 0, 11);
+
+#ifdef CONFIG_LCM_SEND_CMD_IN_VIDEO
+	DISPCHECK("[ESD]restore backlight level[begin]\n");
+	disp_lcm_set_backlight(pgc->plcm, pwm_level_store);
+	DISPCHECK("[ESD]restore backlight level[end]\n");
+#endif
 
 done:
 	_primary_path_unlock(__func__);
@@ -4152,6 +4342,88 @@ static int _ovl2mem_fence_release_worker_thread(void *data)
 }
 
 static struct task_struct *fence_release_worker_task;
+#else
+static struct task_struct *present_fence_release_worker_task;
+
+static int _present_fence_release_worker_thread(void *data)
+{
+	int ret = 0;
+	struct disp_sync_info *layer_info = NULL;
+	/* RTPM_PRIO_FB_THREAD */
+	struct sched_param param = {.sched_priority = 87 };
+
+	sched_setscheduler(current, SCHED_RR, &param);
+
+	dpmgr_enable_event(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC);
+
+	while (1) {
+		ret = dpmgr_wait_event(pgc->dpmgr_handle,
+					DISP_PATH_EVENT_IF_VSYNC);
+
+		/* release present fence in vsync callback */
+	{
+		/* extern disp_sync_info *_get_sync_info(
+		 *			unsigned int session_id,
+		 *			unsigned int timeline_id);
+		 */
+		int fence_increment = 0;
+
+		/* if session not created,
+		 *	do not release present fence
+		 */
+		if (pgc->session_id == 0) {
+			mmprofile_log_ex(
+				ddp_mmp_get_events()->present_fence_release,
+				MMPROFILE_FLAG_PULSE,
+				-1,
+				0x4a4a4a4a);
+			/* DISPDBG("_get_sync_info fail
+			 *	in present_fence_release thread\n");
+			 */
+			continue;
+		}
+
+		layer_info =
+			_get_sync_info(
+				pgc->session_id,
+				disp_sync_get_present_timeline_id()
+				);
+		if (layer_info == NULL) {
+			mmprofile_log_ex(
+				ddp_mmp_get_events()->present_fence_release,
+				MMPROFILE_FLAG_PULSE,
+				-1,
+				0x5a5a5a5a);
+			/* DISPERR("_get_sync_info fail
+			 *	in present_fence_release thread\n");
+			 */
+			continue;
+		}
+
+		_primary_path_lock(__func__);
+		fence_increment =
+			gPresentFenceIndex-layer_info->timeline->value;
+		if (fence_increment > 0) {
+			timeline_inc(layer_info->timeline,
+				fence_increment);
+			mmprofile_log_ex(
+				ddp_mmp_get_events()->present_fence_release,
+				MMPROFILE_FLAG_PULSE,
+				gPresentFenceIndex,
+				fence_increment);
+		}
+		_primary_path_unlock(__func__);
+		/* DISPPR_FENCE("RPF/%d/%d\n",
+		 *		gPresentFenceIndex,
+		 *		gPresentFenceIndex
+		 *		-layer_info->timeline->value);
+		 */
+	}
+	}
+
+	return 0;
+}
+
 #endif
 
 static void _wdma_fence_release_callback(uint32_t userdata)
@@ -4178,11 +4450,15 @@ static void _Interface_fence_release_callback(uint32_t userdata)
 	}
 }
 
-static void _ovl_fence_release_callback(uint32_t userdata)
+static int _ovl_fence_release_callback(uint32_t userdata)
 {
 	int i = 0;
 	unsigned int addr = 0;
 	int ret = 0;
+
+#ifdef CONFIG_FREE_FB_BUFFER
+	unsigned int is_config_fb = 0xff;
+#endif
 
 	mmprofile_log_ex(ddp_mmp_get_events()->session_release,
 			 MMPROFILE_FLAG_START, 1, userdata);
@@ -4194,11 +4470,18 @@ static void _ovl_fence_release_callback(uint32_t userdata)
 		ovl_set_status(DDP_OVL1_STATUS_IDLE);
 		wake_up_interruptible(&ovl1_wait_queue);
 	}
+
 #ifdef CONFIG_FREE_FB_BUFFER
-	if (free_fb_buf) {
-		/*free the frame buffer after kernel init*/
-		primary_display_free_fb_buf();
-		free_fb_buf = 0;
+	if (mutex_trylock(&g_free_fb->fb_free_lock)) {
+		if (!g_free_fb->is_fb_freed) {
+			cmdqBackupReadSlot(g_free_fb->ovl_config_fb_cnt, 0, &is_config_fb);
+			if (!is_config_fb) {
+				DISPCHECK("free the frame buffer after kernel init\n");
+				primary_display_free_fb_buf();
+				g_free_fb->is_fb_freed = true;
+			}
+		}
+		mutex_unlock(&g_free_fb->fb_free_lock);
 	}
 #endif
 
@@ -4274,6 +4557,8 @@ static void _ovl_fence_release_callback(uint32_t userdata)
 		}
 	}
 	_primary_path_unlock(__func__);
+
+	return ret;
 }
 
 static int decouple_fence_release_kthread(void *data)
@@ -4695,28 +4980,14 @@ unsigned int get_dim_layer_mva_addr(void)
 	_primary_path_lock(__func__);
 
 	if (dim_layer_mva == 0) {
-#ifdef CONFIG_FREE_FB_BUFFER
-		/*allocate a new buffer for dim layer*/
-		if (free_fb_buf || pgc->framebuffer_mva == 0) {
-			dim_layer_mva = (unsigned int)init_dim_buffer();
-		} else
+#ifndef CONFIG_FREE_FB_BUFFER
+		int frame_buffer_size = ALIGN_TO(DISP_GetScreenWidth(), MTK_FB_ALIGNMENT) *
+			ALIGN_TO(DISP_GetScreenHeight(), MTK_FB_ALIGNMENT) * 4;
+		dim_layer_mva = pgc->framebuffer_mva + (DISP_GetPages() - 1) * frame_buffer_size;
+		DISPMSG("init dim layer mva %lu, size %d", dim_layer_mva, frame_buffer_size);
+#else
+		dim_layer_mva = (unsigned int)init_dim_buffer();
 #endif
-		{
-			/*use the 2th fb buffer as dim layer*/
-			int frame_buffer_size = ALIGN_TO(DISP_GetScreenWidth(),
-							 MTK_FB_ALIGNMENT) *
-						ALIGN_TO(DISP_GetScreenHeight(),
-							 MTK_FB_ALIGNMENT) *
-						4;
-			unsigned long dim_layer_va =
-				pgc->framebuffer_va + 1 * frame_buffer_size;
-
-			memset_io((void *)dim_layer_va, 0,
-				  frame_buffer_size * 2);
-			dim_layer_mva =
-				pgc->framebuffer_mva + 1 * frame_buffer_size;
-		}
-		DISPMSG("init dim layer mva %u", dim_layer_mva);
 	}
 
 	_primary_path_unlock(__func__);
@@ -4753,6 +5024,18 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps)
 			DISP_SESSION_TIMELINE_COUNT, 0);
 	init_cmdq_slots(&(pgc->rdma_buff_info), 2, 0);
 	init_cmdq_slots(&(pgc->ovl_status_info), 2, 0);
+#ifdef CONFIG_FREE_FB_BUFFER
+	g_free_fb = kmalloc(sizeof(*g_free_fb), GFP_KERNEL);
+	if (g_free_fb) {
+		memset(g_free_fb, 0, sizeof(*g_free_fb));
+		init_cmdq_slots(&(g_free_fb->ovl_config_fb_cnt), 1, 1);
+		mutex_init(&g_free_fb->fb_free_lock);
+	} else {
+		DISPERR("Failed to allocate memory to free framebuffer.\n");
+		ret = DISP_STATUS_ERROR;
+		goto done;
+	}
+#endif
 	/*
 	 * ret = cmdqRecCreate(CMDQ_SCENARIO_DISP_PRIMARY_DISABLE_SECURE_PATH,
 	 * &(pgc->sec_switch_handle));
@@ -4848,7 +5131,7 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps)
 #endif
 
 	/* debug for bus hang issue (need to remove) */
-	ddp_dump_analysis(DISP_MODULE_CONFIG);
+	/* ddp_dump_analysis(DISP_MODULE_CONFIG); */
 	if (primary_display_mode == DIRECT_LINK_MODE) {
 		__build_path_direct_link();
 		pgc->session_mode = DISP_SESSION_DIRECT_LINK_MODE;
@@ -5028,6 +5311,8 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps)
 				   "ovl2mem_fence_worker");
 		wake_up_process(ovl2mem_fence_release_worker_task);
 	}
+#endif
+#if 1
 	present_fence_release_worker_task =
 	    kthread_create(_present_fence_release_worker_thread,
 			    NULL, "present_fence_worker");
@@ -5120,8 +5405,30 @@ int primary_display_deinit(void)
 
 	_cmdq_stop_trigger_loop();
 	dpmgr_path_deinit(pgc->dpmgr_handle, CMDQ_DISABLE);
+#ifdef CONFIG_FREE_FB_BUFFER
+	if(g_free_fb)
+		kfree(g_free_fb);
+#endif
 	_primary_path_unlock(__func__);
 	return 0;
+}
+
+static unsigned long primary_display_free_reserved_area(
+		void *start, void *end, int poison, char *s)
+{
+	void *pos;
+	unsigned long pages = 0;
+
+	start = (void *)PAGE_ALIGN((unsigned long)start);
+	end = (void *)((unsigned long)end & PAGE_MASK);
+	for (pos = start; pos < end; pos += PAGE_SIZE, pages++)
+		free_reserved_page(virt_to_page(pos));
+
+	if (pages && s)
+		pr_info("Freeing %s memory: %ldK\n",
+				s, pages << (PAGE_SHIFT - 10));
+
+	return pages;
 }
 
 int primary_display_free_fb_buf(void)
@@ -5133,11 +5440,11 @@ int primary_display_free_fb_buf(void)
 
 	if (pgc->framebuffer_pa) {
 		ret = m4u_dealloc_mva_fix(pgc->framebuffer_client,
-					  M4U_PORT_DISP_OVL0,
-					  pgc->framebuffer_mva);
+				M4U_PORT_DISP_OVL0,
+				pgc->framebuffer_mva);
 		if (ret)
 			DISPMSG("free framebuffer mva address fail, ret= %d\n",
-				ret);
+					ret);
 		pgc->framebuffer_mva = 0;
 
 		vunmap((void *)pgc->framebuffer_va);
@@ -5145,16 +5452,16 @@ int primary_display_free_fb_buf(void)
 
 		va_start = (unsigned long)__va(pgc->framebuffer_pa);
 		va_end = (unsigned long)__va(pgc->framebuffer_pa +
-					     (unsigned long)vramsize);
-		free_reserved_area((void *)va_start, (void *)va_end, 0,
-				   "fbmem");
+				(unsigned long)vramsize);
+		primary_display_free_reserved_area((void *)va_start, (void *)va_end, 0,
+				"fbmem");
 		/*
 		 * free_fb_mem(pgc->framebuffer_pa, pgc->framebuffer_pa +
 		 * (unsigned long)vramsize);
 		 */
 		DISPMSG(
-			"reserve_framebuffer_free framebuffer_mva = 0x%lx, size 0x%x\n",
-			pgc->framebuffer_pa, vramsize);
+				"reserve_framebuffer_free framebuffer_mva = 0x%lx, size 0x%x\n",
+				pgc->framebuffer_pa, vramsize);
 		pgc->framebuffer_pa = 0;
 
 		fbi = mtkfb_get_fb_info();
@@ -5163,6 +5470,8 @@ int primary_display_free_fb_buf(void)
 			fbi->fix.smem_len = 0;
 			fbi->screen_base = 0;
 		}
+		fb_base  = 0x0;
+		vramsize = 0x0;
 	}
 
 	return 0;
@@ -5454,12 +5763,12 @@ int primary_display_suspend(void)
 			 MMPROFILE_FLAG_PULSE, 0, 8);
 	display_path_idle_cnt = 0;
 
-#ifndef CONFIG_LCM_SEND_CMD_IN_VIDEO
+/* #ifndef CONFIG_LCM_SEND_CMD_IN_VIDEO */
 #ifndef CONFIG_NO_DISPLAY
 	disp_lcm_suspend_power(pgc->plcm);
 #endif
 	DISPCHECK("[POWER]lcm suspend_power[end]\n");
-#endif
+/* #endif */
 	pgc->state = DISP_SLEPT;
 done:
 	_primary_path_vsync_unlock();
@@ -6202,7 +6511,13 @@ static int _config_ovl_input(struct disp_session_input_config *session_input)
 	int max_layer_id_configed = 0;
 	int force_disable_ovl1 = 0;
 	void *disp_handle;
-	struct cmdqRecStruct *cmdq_handle;
+	struct cmdqRecStruct *cmdq_handle = NULL;
+#ifdef CONFIG_FREE_FB_BUFFER
+	static int free_fb_cnt = 0;
+	int ovl_is_config_fb = 0;
+	int layer_size;
+#endif
+
 
 	if (_is_decouple_mode(pgc->session_mode))
 		disp_handle = pgc->ovl2mem_path_handle;
@@ -6257,6 +6572,17 @@ static int _config_ovl_input(struct disp_session_input_config *session_input)
 			max_layer_id_configed = layer;
 
 		data_config->ovl_dirty = 1;
+#ifdef CONFIG_FREE_FB_BUFFER
+		// safe, even try to free FB multi times.
+		if (!g_free_fb->is_fb_freed && !ovl_is_config_fb) {
+			layer_size = ovl_cfg->src_pitch * ovl_cfg->src_h;
+			if ((unsigned long)pgc->framebuffer_mva < ovl_cfg->addr + layer_size
+					&& ovl_cfg->addr < (unsigned long)pgc->framebuffer_mva + vramsize) {
+				ovl_is_config_fb = 1;
+				DISPDBG("ovl used framebuffer addr: 0x%lx\n", ovl_cfg->addr);
+			}
+		}
+#endif
 	}
 
 #ifdef OVL_CASCADE_SUPPORT
@@ -6351,6 +6677,31 @@ static int _config_ovl_input(struct disp_session_input_config *session_input)
 	}
 
 	update_debug_fps_meter(data_config);
+#ifdef CONFIG_FREE_FB_BUFFER
+	if (!g_free_fb->is_fb_freed) {
+		if (!ovl_is_config_fb)
+			free_fb_cnt++;
+		else
+			free_fb_cnt = 0;
+		if (free_fb_cnt >= THREATHOLD_FREE_FB) {
+			DISPCHECK("%s trigger to release framebuffer.\n", __func__);
+			cmdqRecBackupUpdateSlot(cmdq_handle, g_free_fb->ovl_config_fb_cnt, 0, ovl_is_config_fb);
+		}
+	}
+#if 0
+	{//Debug only.
+		struct OVL_BASIC_STRUCT ovlInfo[12/*OVL_LAYER_NUM=8*/];
+		memset(ovlInfo, 0, sizeof(ovlInfo));
+		ovl_get_info(DISP_MODULE_OVL0, &ovlInfo);
+		ovl_get_info(DISP_MODULE_OVL1, &ovlInfo[4]);
+		for (i=0; i<8; i++) {
+			DISPMSG("OVL%d layer[%d] en=%d, addr=0x%p, %dX%d. cnt=%d\n",
+					i/4, ovlInfo[i].layer, ovlInfo[i].layer_en, (void *)ovlInfo[i].addr,
+					ovlInfo[i].src_w, ovlInfo[i].src_h, free_fb_cnt);
+		}
+	}
+#endif
+#endif
 
 	return ret;
 }
@@ -6609,11 +6960,11 @@ int primary_display_user_cmd(unsigned int cmd, unsigned long arg)
 			_primary_path_unlock(__func__);
 		}
 
+		mmprofile_log_ex(ddp_mmp_get_events()->primary_display_cmd,
+			MMPROFILE_FLAG_END, (unsigned long)handle, cmdqsize);
+
 		cmdqRecDestroy(handle);
 	}
-
-	mmprofile_log_ex(ddp_mmp_get_events()->primary_display_cmd,
-			 MMPROFILE_FLAG_END, (unsigned long)handle, cmdqsize);
 
 	return ret;
 }
@@ -6724,6 +7075,15 @@ done:
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_switch_mode,
 			 MMPROFILE_FLAG_END, pgc->session_mode, sess_mode);
 	return 0;
+}
+
+void primary_display_update_present_fence(unsigned int fence_idx)
+{
+	gPresentFenceIndex = fence_idx;
+#ifdef CONFIG_SINGLE_PANEL_OUTPUT
+	if (pgc->state == DISP_SLEPT)
+		primary_suspend_release_present_fence();
+#endif
 }
 
 #ifdef MTK_DISP_IDLE_LP
@@ -7365,6 +7725,7 @@ int primary_display_setbacklight(unsigned int level)
 		} else {
 			_set_backlight_by_cpu(level);
 		}
+		pwm_level_store = level;
 	}
 #ifdef GPIO_LCM_LED_EN
 	if (level == 0)

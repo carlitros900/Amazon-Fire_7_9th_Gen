@@ -89,6 +89,11 @@ static const int DC1devider = 8;	/* in uv */
 static int mHpLeftDcCalibration;
 static int mHpRightDcCalibration;
 
+#ifdef CONFIG_AMP_AW8737S
+static int switch_mode_delay = 0;
+static DEFINE_SPINLOCK(switch_mode_lock);
+#endif
+
 #if 0 /* currently not used */
 static uint32 RG_AUDHPLTRIM_VAUDP15, RG_AUDHPRTRIM_VAUDP15,
 	RG_AUDHPLFINETRIM_VAUDP15, RG_AUDHPRFINETRIM_VAUDP15,
@@ -584,8 +589,10 @@ uint32 GetDLFrequency(uint32 frequency)
 		break;
 	case 48000:
 		Reg_value = 10;
+		break;
 	default:
 		pr_debug("GetDLFrequency with frequency = %d", frequency);
+		break;
 	}
 	return Reg_value;
 }
@@ -907,9 +914,11 @@ uint32 GetDLNewIFFrequency(unsigned int frequency)
 		break;
 	case 48000:
 		Reg_value = 8;
+		break;
 	default:
 		pr_debug("ApplyDLNewIFFrequency with frequency = %d\n",
 			frequency);
+		break;
 	}
 	return Reg_value;
 }
@@ -926,9 +935,11 @@ uint32 GetULNewIFFrequency(unsigned int frequency)
 		break;
 	case 48000:
 		Reg_value = 3;
+		break;
 	default:
 		pr_debug("GetULNewIFFrequency with frequency = %d\n",
 			frequency);
+		break;
 	}
 	pr_debug("GetULNewIFFrequency Reg_value = %d\n", Reg_value);
 	return Reg_value;
@@ -942,7 +953,7 @@ static void TurnOnDacPower(void)
 	audckbufEnable(true);
 	ClsqEnable(true);
 	Topck_Enable(true);
-	udelay(250);
+	udelay(300);
 	NvregEnable(true);
 
 	/* set digital part */
@@ -965,6 +976,7 @@ static void TurnOffDacPower(void)
 
 	NvregEnable(false);
 	ClsqEnable(false);
+	udelay(300);
 	Topck_Enable(false);
 	audckbufEnable(false);
 }
@@ -1500,23 +1512,29 @@ do { \
 } while (0)
 #endif
 
-#ifdef CONFIG_abc123_PROJECT
-#define GAP5 (5)			/* unit: us */
+#ifdef CONFIG_AMP_AW8737S
+/*
+Refer to the AW8737 datasheet, the pulse width on SHDN pin should be 0.75-10us (typical 2us).
+We add 1us delay in our source code, the width of the actual HW output is 7us (because of the additional code execution time).
+This pulse width is accord with the datasheet, so 1us setting is correct and reasonable.
+*/
 #define AW8737_MODE4 /*0.8w*/ \
 do { \
+	spin_lock_irq(&switch_mode_lock);\
 	AudDrv_GPIO_EXTAMP_Select(true); \
-	udelay(GAP5); \
+	udelay(switch_mode_delay); \
 	AudDrv_GPIO_EXTAMP_Select(false); \
-	udelay(GAP5); \
+	udelay(switch_mode_delay); \
 	AudDrv_GPIO_EXTAMP_Select(true); \
-	udelay(GAP5); \
+	udelay(switch_mode_delay); \
 	AudDrv_GPIO_EXTAMP_Select(false); \
-	udelay(GAP5); \
+	udelay(switch_mode_delay); \
 	AudDrv_GPIO_EXTAMP_Select(true); \
-	udelay(GAP5); \
+	udelay(switch_mode_delay); \
 	AudDrv_GPIO_EXTAMP_Select(false); \
-	udelay(GAP5); \
+	udelay(switch_mode_delay); \
 	AudDrv_GPIO_EXTAMP_Select(true); \
+	spin_unlock_irq(&switch_mode_lock); \
 } while (0)
 #endif
 
@@ -1569,8 +1587,9 @@ static void Ext_Speaker_Amp_Change(bool enable)
 
 		msleep(SPK_WARM_UP_TIME);
 #endif
-#ifdef CONFIG_abc123_PROJECT
+#ifdef CONFIG_AMP_AW8737S
 		AW8737_MODE4;
+		msleep(SPK_WARM_UP_TIME);
 #endif
 		pr_debug("Ext_Speaker_Amp_Change ON-\n");
 	} else {
@@ -1590,7 +1609,7 @@ static void Ext_Speaker_Amp_Change(bool enable)
 
 		udelay(500);
 #endif
-#ifdef CONFIG_abc123_PROJECT
+#ifdef CONFIG_AMP_AW8737S
 		AudDrv_GPIO_EXTAMP_Select(false);
 #endif
 		pr_debug("Ext_Speaker_Amp_Change OFF-\n");
@@ -2090,6 +2109,9 @@ static const struct snd_kcontrol_new mt6323_snd_Speaker_controls[] = {
 static const char * const amp_function[] = { "Off", "On" };
 static const char * const aud_clk_buf_function[] = { "Off", "On" };
 static const char * const hp_spk_sel_function[] = { "Speaker", "Headphone" };
+#ifdef CONFIG_AMP_AW8737S
+static const char * const using_speaker_function[] = { "false", "true" };
+#endif
 
 static const char * const DAC_DL_PGA_Headset_GAIN[] = { "9Db", "7Db",
 "5Db", "3Db", "1Db", "-1Db", "-3Db", "-5Db" };
@@ -2348,6 +2370,18 @@ static int Aud_Clk_Buf_Set(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+#ifdef CONFIG_AMP_AW8737S
+static int Audio_Ext_Speaker_Set(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+{
+	pr_info("%s(), value = %d\n", __func__, ucontrol->value.enumerated.item[0]);
+	if (ucontrol->value.integer.value[0])
+		setUsingExtSpeaker(true);
+	else
+		setUsingExtSpeaker(false);
+	return 0;
+}
+#endif
+
 static const struct soc_enum Audio_DL_Enum[] = {
 
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(amp_function), amp_function),
@@ -2373,6 +2407,10 @@ static const struct soc_enum Audio_DL_Enum[] = {
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(EXT_AMP_GAIN), EXT_AMP_GAIN),
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(aud_clk_buf_function),
 		aud_clk_buf_function),
+#ifdef CONFIG_AMP_AW8737S
+	/* Using ext speaker or not*/
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(using_speaker_function), using_speaker_function),
+#endif
 };
 
 static const struct snd_kcontrol_new mt6323_snd_controls[] = {
@@ -2411,6 +2449,9 @@ static const struct snd_kcontrol_new mt6323_snd_controls[] = {
 		Audio_DL_Enum[13], Ext_Amp_Gain_Get, Ext_Amp_Gain_Set),
 	SOC_ENUM_EXT("AUD_CLK_BUF_Switch",
 		Audio_DL_Enum[14], Aud_Clk_Buf_Get, Aud_Clk_Buf_Set),
+#ifdef CONFIG_AMP_AW8737S
+	SOC_ENUM_EXT("Audio_Ext_Speaker", Audio_DL_Enum[15], NULL, Audio_Ext_Speaker_Set),
+#endif
 };
 
 static const struct snd_kcontrol_new mt6323_Voice_Switch[] = {
@@ -3971,8 +4012,27 @@ static int mtk_mt6323_codec_dev_remove(struct platform_device *pdev)
 static const struct of_device_id mt_soc_codec_63xx_of_ids[] = {
 
 	{.compatible = "mediatek,mt8163-soc-codec-63xx",},
+	{.compatible = "mediatek,mt8163-audiosys", },
 	{}
 };
+
+static int  mt_soc_get_dts_config(void)
+{
+#ifdef CONFIG_AMP_AW8737S
+	struct device_node *node = NULL;
+	node = of_find_matching_node(node, mt_soc_codec_63xx_of_ids);
+	if (node){
+		if (of_property_read_u32(node, "switch-mode-delay", &switch_mode_delay) < 0) {
+			pr_err("%s: No switch mode delay defined\n", __FUNCTION__);
+			return -1;
+		}
+	} else {
+		pr_err("%s: No matching dts node\n", __FUNCTION__);
+		return -1;
+	}
+#endif
+	return 0;
+}
 
 #if 0
 static int Auddrv_getGPIO_info(void)
@@ -4061,6 +4121,12 @@ static int __init mtk_mt6323_codec_init(void)
 		return ret;
 	}
 #endif
+
+	if( mt_soc_get_dts_config() < 0 ) {
+		pr_err("%s: Can't get dts config !!!\n", __FUNCTION__);
+		return -EINVAL;
+	}
+
 	ret = platform_driver_register(&mtk_codec_6323_driver);
 	return ret;
 }

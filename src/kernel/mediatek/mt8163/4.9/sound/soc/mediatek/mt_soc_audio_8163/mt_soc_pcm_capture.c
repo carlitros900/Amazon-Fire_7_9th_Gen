@@ -527,7 +527,7 @@ static int mtk_capture_pcm_copy(struct snd_pcm_substream *substream,
 				Vul_Block->u4DMAReadIdx);
 		}
 
-		if (copy_to_user((void __user *)Read_Data_Ptr,
+		if (copy_to_user_fromio((void __user *)Read_Data_Ptr,
 			 (Vul_Block->pucVirtBufAddr + DMA_Read_Ptr),
 		     read_size)) {
 			pr_err("%s Fail1 cp to user RdPtr:%p,pucAddr:%p,",
@@ -566,7 +566,7 @@ static int mtk_capture_pcm_copy(struct snd_pcm_substream *substream,
 			 DMA_Read_Ptr,
 			Vul_Block->u4DMAReadIdx);
 		}
-		if (copy_to_user((void __user *)Read_Data_Ptr,
+		if (copy_to_user_fromio((void __user *)Read_Data_Ptr,
 			 (Vul_Block->pucVirtBufAddr + DMA_Read_Ptr),
 		     (unsigned int)size_1)) {
 			pr_err("%s Fail 2 copy to user rp:%p, virAddr:%p,",
@@ -601,7 +601,7 @@ static int mtk_capture_pcm_copy(struct snd_pcm_substream *substream,
 			Vul_Block->u4DMAReadIdx);
 		}
 
-		if (copy_to_user((void __user *)(Read_Data_Ptr + size_1),
+		if (copy_to_user_fromio((void __user *)(Read_Data_Ptr + size_1),
 		     (Vul_Block->pucVirtBufAddr + DMA_Read_Ptr), size_2)) {
 			pr_err("%sFail3 cp to user RdPtr:%p,Addr:%p,",
 			 __func__,

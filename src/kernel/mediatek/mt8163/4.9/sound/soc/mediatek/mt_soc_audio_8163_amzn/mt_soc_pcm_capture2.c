@@ -174,11 +174,6 @@ static snd_pcm_uframes_t mtk_capture2_pcm_pointer(
 	pr_debug("mtk_capture2_pcm_pointer vul2_Block->u4WriteIdx = 0x%x\n",
 		vul2_Block->u4WriteIdx);
 	if (VUL2_Control_context->interruptTrigger == 1) {
-		/* get total bytes to copysinewavetohdmi */
-		Frameidx = audio_bytes_to_frame(
-			substream, vul2_Block->u4WriteIdx);
-		return Frameidx;
-
 		HW_Cur_ReadIdx = Align64ByteSize(Afe_Get_Reg(AFE_VUL_D2_CUR));
 		if (HW_Cur_ReadIdx == 0) {
 			pr_warn("[Auddrv] mtk_capture2_pcm_pointer HW_Cur_ReadIdx == 0\n");
@@ -192,8 +187,10 @@ static snd_pcm_uframes_t mtk_capture2_pcm_pointer(
 		VUL2_Control_context->interruptTrigger = 0;
 		return (HW_memory_index >> 2);
 	}
-	return (Previous_Hw_cur >> 2);
-
+	/* get total bytes to copysinewavetohdmi */
+	Frameidx = audio_bytes_to_frame(
+		substream, vul2_Block->u4WriteIdx);
+	return Frameidx;
 }
 
 static void SetVULBuffer(struct snd_pcm_substream *substream,

@@ -886,7 +886,7 @@ static u8 gup_check_update_file(struct i2c_client *client,
 		ret = request_firmware(&update_msg.fw, GT9XX_FW_NAME,
 					&client->dev);
 		if (ret < 0) {
-			GTP_ERROR("Request firmware failed - %s (%d)\n",
+			GTP_ERROR("Request firmware failed - %s (%d)",
 						GT9XX_FW_NAME, ret);
 			return FAIL;
 		}
@@ -2316,7 +2316,7 @@ static u8 gup_burn_fw_gwake(struct i2c_client *client)
 	if (retry >= 5) {
 		GTP_ERROR(
 	"[burn_fw_gwake]Alloc memory fail,exit.");
-
+		kfree(fw_gwake);
 		return FAIL;
 	}
 
@@ -2777,7 +2777,7 @@ u8 gup_init_update_proc(struct goodix_ts_data *ts)
 
 	if (IS_ERR(thread)) {
 		GTP_ERROR(
-	"Failed to create update thread.\n");
+	"Failed to create update thread.");
 		return -1;
 	}
 

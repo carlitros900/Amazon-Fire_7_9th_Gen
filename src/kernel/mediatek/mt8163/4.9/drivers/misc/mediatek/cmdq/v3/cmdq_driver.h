@@ -19,7 +19,7 @@
 
 struct cmdqUsageInfoStruct {
 	/* [OUT] current engine ref count */
-	u32 count[CMDQ_MAX_ENGINE_COUNT];
+	uint32_t count[CMDQ_MAX_ENGINE_COUNT];
 };
 
 struct cmdqJobStruct {
@@ -30,7 +30,7 @@ struct cmdqJobStruct {
 struct cmdqJobResultStruct {
 	/* [IN]  Job handle from CMDQ_IOCTL_ASYNC_JOB_EXEC */
 	cmdqJobHandle_t hJob;
-	u64 engineFlag;	/* [OUT] engine flag passed down originally */
+	uint64_t engineFlag;	/* [OUT] engine flag passed down originally */
 
 	/* [IN/OUT] read register values, if any.
 	 * as input, the "count" field must represent
@@ -51,7 +51,7 @@ struct cmdqWriteAddressStruct {
 	/* [IN] count of the writable buffer
 	 * (unit is # of u32, NOT in byte)
 	 */
-	u32 count;
+	uint32_t count;
 
 	/* [OUT] When Alloc, this is the resulting PA.
 	 * It is guaranteed to be continuous.
@@ -62,7 +62,7 @@ struct cmdqWriteAddressStruct {
 	 * (upper-32bit don't care for SW)
 	 * and consistent common code interface, remain u32 type.
 	 */
-	u32 startPA;
+	uint32_t startPA;
 };
 
 #define CMDQ_IOCTL_MAGIC_NUMBER 'x'
@@ -105,6 +105,6 @@ struct cmdqWriteAddressStruct {
 /* Notify MDP will use specified engine before really use. */
 /* input int is same as EngineFlag. */
 /*  */
-#define CMDQ_IOCTL_NOTIFY_ENGINE _IOW(CMDQ_IOCTL_MAGIC_NUMBER, 12, u64)
+#define CMDQ_IOCTL_NOTIFY_ENGINE _IOW(CMDQ_IOCTL_MAGIC_NUMBER, 12, uint64_t)
 
 #endif				/* __CMDQ_DRIVER_H__ */

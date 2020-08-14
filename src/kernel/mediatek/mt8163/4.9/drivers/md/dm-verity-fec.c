@@ -466,10 +466,10 @@ static int fec_log_errors(struct dm_verity *v, enum verity_block_type type,
 	}
 
 	DMERR("%s: %s block %llu is corrupted", v->data_dev->name, type_str,
-		block);
+		(unsigned long long)block);
 
 	snprintf(verity_env, FEC_ENV_LENGTH, "%s=%d,%llu",
-		FEC_ENV_VAR_NAME, type, block);
+		FEC_ENV_VAR_NAME, type, (unsigned long long)block);
 	kobject_uevent_env(&disk_to_dev(dm_disk(md))->kobj, KOBJ_CHANGE, envp);
 
 	return 0;

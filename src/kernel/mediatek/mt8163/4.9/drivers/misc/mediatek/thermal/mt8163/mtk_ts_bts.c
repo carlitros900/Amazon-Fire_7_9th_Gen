@@ -28,10 +28,13 @@
 #include <linux/writeback.h>
 #include <linux/uidgid.h>
 #include <linux/uaccess.h>
-#include <linux/platform_data/mtk_thermal.h>
 #include "mt-plat/mtk_thermal_monitor.h"
 #include "mach/mt_thermal.h"
 #include "mtk_ts_cpu.h"
+
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
+#include <linux/thermal_framework.h>
+#endif
 
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 #include <linux/sign_of_life.h>
@@ -246,7 +249,6 @@ static signed short mtkts_bts_thermistor_conver_temp(signed int Res)
 								(RES1 - RES2);
 	}
 
-	pr_debug("Temperature is TAP_Value=%d\n", TAP_Value);
 	return TAP_Value;
 }
 
@@ -254,12 +256,9 @@ static signed short mtkts_bts_thermistor_conver_temp(signed int Res)
 /*Volt to Temp formula same with 6589*/
 static signed short mtk_ts_bts_volt_to_temp(int index, unsigned int dwVolt)
 {
-	s32 TRes;
-	s64 dwVCriAP = 0;
-	s32 BTS_TMP = -100;
-	s32 critical_low = bts_channel_param[index].g_TAP_over_critical_low;
-	s64 up_voltage = bts_channel_param[index].g_RAP_pull_up_voltage;
-	s32 up_R = bts_channel_param[index].g_RAP_pull_up_R;
+	signed int TRes;
+	signed int dwVCriAP = 0;
+	signed int BTS_TMP = -100;
 
 	/* SW workaround----------------------------------------------------- */
 	/* dwVCriAP = (TAP_OVER_CRITICAL_LOW * 1800) /
@@ -268,9 +267,11 @@ static signed short mtk_ts_bts_volt_to_temp(int index, unsigned int dwVolt)
 	/* dwVCriAP = (TAP_OVER_CRITICAL_LOW * RAP_PULL_UP_VOLT) /
 	 * (TAP_OVER_CRITICAL_LOW + RAP_PULL_UP_R);
 	 */
-	dwVCriAP = div_s64(critical_low * up_voltage, critical_low + up_R);
-	pr_debug("index=%d, dwVolt=%d, critical_low=%d, up_R=%d, up_voltage=%lld, dwVCriAP=%lld\n",
-		index, dwVolt, critical_low, up_R, up_voltage, dwVCriAP);
+	dwVCriAP =
+	    (bts_channel_param[index].g_TAP_over_critical_low *
+		bts_channel_param[index].g_RAP_pull_up_voltage) /
+			(bts_channel_param[index].g_TAP_over_critical_low +
+		bts_channel_param[index].g_RAP_pull_up_R);
 
 	if (dwVolt > dwVCriAP) {
 		TRes = bts_channel_param[index].g_TAP_over_critical_low;
@@ -281,7 +282,7 @@ static signed short mtk_ts_bts_volt_to_temp(int index, unsigned int dwVolt)
 		(bts_channel_param[index].g_RAP_pull_up_voltage - dwVolt);
 	}
 	/* ------------------------------------------------------------------ */
-	mtkts_bts_dprintk("index=%d, dwVCriAP=%lld, TRes=%d\n",
+	mtkts_bts_dprintk("index=%d, dwVCriAP=%d, TRes=%d\n",
 		index, dwVCriAP, TRes);
 	bts_channel_param[index].g_AP_TemperatureR = TRes;
 #ifdef CONFIG_THERMAL_abc123
@@ -490,30 +491,37 @@ static int mtkts_bts_get_crit_temp(struct thermal_zone_device *thermal,
 }
 
 #define PREFIX "thermaltsbts:def"
-static int mtkts_bts_thermal_notify(struct thermal_zone_device *thermal, int trip, enum thermal_trip_type type)
+static int mtkts_bts_thermal_notify(struct thermal_zone_device *thermal,
+		int trip, enum thermal_trip_type type)
 {
 #ifdef CONFIG_AMAZON_METRICS_LOG
 	char buf[TSBTS_METRICS_STR_LEN];
 #endif
 
-	pr_err("%s: thermal_shutdown notify\n", __func__);
-	last_kmsg_thermal_shutdown();
-	pr_err("%s: thermal_shutdown notify end\n", __func__);
-
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 	if (type == THERMAL_TRIP_CRITICAL) {
-		pr_debug("[%s] Thermal shutdown bts, temp=%d, trip=%d\n",__func__, thermal->temperature, trip);
-		life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_BTS);
+		pr_err("[%s] Thermal shutdown bts, temp=%d, trip=%d\n",
+				__func__, thermal->temperature, trip);
+		life_cycle_set_thermal_shutdown_reason(
+		THERMAL_SHUTDOWN_REASON_BTS);
+	}
+#endif
+
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
+	if (type == THERMAL_TRIP_CRITICAL) {
+		pr_err("%s: thermal_shutdown notify\n", __func__);
+		last_kmsg_thermal_shutdown();
+		pr_err("%s: thermal_shutdown notify end\n", __func__);
 	}
 #endif
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
-	if (type == THERMAL_TRIP_CRITICAL) {
+	if (type == THERMAL_TRIP_CRITICAL &&
 		snprintf(buf, TSBTS_METRICS_STR_LEN,
 			"%s:tsbtsmonitor;CT;1,temp=%d;trip=%d;CT;1:NR",
-			PREFIX, thermal->temperature, trip);
+			PREFIX, thermal->temperature, trip) > 0)
 		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-	}
+
 #endif
 	return 0;
 }
@@ -641,6 +649,8 @@ static ssize_t mtkts_bts_write(struct file *file,
 		mtkts_bts_dprintk(
 "[mtkts_bts_write]mtkts_bts_unregister_thermal\n");
 		mtkts_bts_unregister_thermal();
+		if (num_trip < 0 || num_trip > 10)
+			return -EINVAL;
 
 		for (i = 0; i < num_trip; i++)
 			g_THERMAL_TRIP[i] = t_type[i];
@@ -786,8 +796,6 @@ void mtkts_bts_prepare_table(int table_num)
 		ntc_tbl_size = sizeof(BTS_Temperature_Table4);
 		break;
 	}
-	pr_debug("Table matched : table_num=%d, table_rows=%d\n",
-		table_num, (int)(ntc_tbl_size / sizeof(struct BTS_TEMPERATURE)));
 }
 #else
 void mtkts_bts_prepare_table(int table_num)
@@ -976,7 +984,6 @@ static const struct file_operations mtkts_AP_param_fops = {
 
 static int __init mtkts_bts_init(void)
 {
-	int err = 0;
 	struct proc_dir_entry *entry = NULL;
 	struct proc_dir_entry *mtkts_AP_dir = NULL;
 
@@ -1006,9 +1013,6 @@ static int __init mtkts_bts_init(void)
 	}
 
 	return 0;
-
-	/* mtkts_AP_unregister_cooler(); */
-	return err;
 }
 
 static void __exit mtkts_bts_exit(void)
@@ -1043,8 +1047,12 @@ static int gadc_thermal_get_temp(void *data, int index, int *temp)
 	}
 
 	channel = &gti->channel[index];
-	if (!channel)
-		return -EINVAL;
+
+	if (IS_ERR(channel)) {
+		ret = PTR_ERR(channel);
+		pr_info("%s: IIO channel not found: %d\n", __func__, ret);
+		return ret;
+	}
 
 	ret = iio_read_channel_processed(channel, &val);
 	if (ret < 0) {

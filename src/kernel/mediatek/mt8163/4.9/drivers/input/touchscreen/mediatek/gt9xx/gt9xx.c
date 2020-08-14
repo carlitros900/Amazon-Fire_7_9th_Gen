@@ -56,6 +56,7 @@ static char *key_names[] = {"Key_Home",
 static s8 gtp_i2c_test(struct i2c_client *client);
 s32 gtp_read_version(struct i2c_client *client, u16 *version);
 
+static ssize_t gtp_cfg_version_read(char *buf);
 static ssize_t gt91xx_config_read_proc(struct file *file,
 	char __user *buffer, size_t size, loff_t *ppos);
 static ssize_t gt91xx_config_write_proc(struct file *filp,
@@ -569,7 +570,7 @@ static void goodix_ts_work_func(struct work_struct *work)
 	GTP_DEBUG_FUNC();
 	ts = container_of(work, struct goodix_ts_data, work);
 
-	if (ts->enter_update)
+	if (ts->enter_update || ts->gtp_is_suspend)
 		return;
 
 #if GTP_GESTURE_WAKEUP
@@ -673,7 +674,7 @@ static void goodix_ts_work_func(struct work_struct *work)
 
 	if (ret < 0) {
 		GTP_ERROR(
-	"I2C transfer error. errno:%d\n ", ret);
+	"I2C transfer error. errno:%d", ret);
 
 		if (ts->use_irq)
 			gtp_irq_enable(ts);
@@ -923,7 +924,7 @@ static void goodix_ts_work_func(struct work_struct *work)
 		}
 
 		GTP_DEBUG(
-	"id = %d,touch_index = 0x%x, pre_touch = 0x%x\n",
+	"id = %d,touch_index = 0x%x, pre_touch = 0x%x",
 		id, touch_index, pre_touch);
 
 		for (i = 0; i < GTP_MAX_TOUCH; i++) {
@@ -1694,10 +1695,31 @@ static s32 gtp_init_panel(struct goodix_ts_data *ts)
 	return 0;
 }
 
+static ssize_t gtp_cfg_version_read(char *buf)
+{
+	int ret;
+	char temp_data[GTP_CONFIG_MAX_LENGTH + 2] = {
+		(u8)(GTP_REG_CONFIG_DATA >> 8),
+		(u8)GTP_REG_CONFIG_DATA };
+
+	if (buf == NULL)
+		return 0;
+	ret = gtp_i2c_read(i2c_connect_client, temp_data,
+			GTP_CONFIG_MAX_LENGTH + 2);
+	if (ret < 0) {
+		GTP_ERROR("Failed read config registers. Is it poweroff?\n");
+		return 0;
+	}
+	*buf = temp_data[2];
+	return 1;
+}
+
 static ssize_t gt91xx_fw_version_read_proc(struct file *file, char __user *buffer, size_t size, loff_t *ppos)
 {
 	int ret;
 	u16 version_info;
+	u8 sensor_id = 0xff;
+	char config_version = 0;
 	int len,err = -1;
 	char *page = NULL;
 	char *ptr = NULL;
@@ -1712,12 +1734,27 @@ static ssize_t gt91xx_fw_version_read_proc(struct file *file, char __user *buffe
 
 	ptr = page;
 
-	ret = gtp_read_version(i2c_connect_client, &version_info);
-
-	if (ret < 0)
-		ptr += sprintf(ptr, "Read version failed\n");
+	ret = gtp_i2c_read_dbl_check(i2c_connect_client,
+			GTP_REG_SENSOR_ID, &sensor_id, 1);
+	if (ret == SUCCESS) {
+		if (sensor_id >= 0x06) {
+			GTP_ERROR("Invalid sensor_id(0x%02X)",
+				sensor_id);
+		}
+	}
 	else
-		ptr += sprintf(ptr, "0x%02x\n", version_info);
+		GTP_ERROR("Error read sensor id");
+
+	ret = gtp_read_version(i2c_connect_client, &version_info);
+	if (ret < 0)
+		GTP_ERROR("Error read fw version");
+
+	ret = gtp_cfg_version_read(&config_version);
+	if (ret == 0)
+		GTP_ERROR("Failed read touch config version.");
+
+	ptr += sprintf(ptr, "sid:0x%02x, fw_ver:0x%02x, cfg_ver:0x%02x\n",
+				sensor_id, version_info, config_version);
 
 	len = ptr - page;
 
@@ -1763,7 +1800,7 @@ static ssize_t gt91xx_config_read_proc(struct file *file,
 			(gtp_data_each_line_cnt * gtp_data_len_cnt +1) * 2;
 
 	if(len > PAGE_SIZE){
-		GTP_ERROR("length is out of pagesize,len(%d)>PAGE_SIZE(%lu)\n",
+		GTP_ERROR("length is out of pagesize,len(%d)>PAGE_SIZE(%lu)",
 			len,PAGE_SIZE);
 		kfree(page);
 		return -ENOMEM;
@@ -1813,7 +1850,7 @@ static ssize_t gt91xx_config_write_proc(struct file *filp,
 		size_t count, loff_t *off)
 {
 	s32 ret = 0;
-	/*	GTP_DEBUG("write count %d\n", count); */
+	/*	GTP_DEBUG("write count %d", count); */
 
 	if (count > GTP_CONFIG_MAX_LENGTH)
 
@@ -1821,7 +1858,7 @@ static ssize_t gt91xx_config_write_proc(struct file *filp,
 
 
 	if (copy_from_user(&config[2], buffer, count)) {
-		GTP_ERROR("copy from user fail\n");
+		GTP_ERROR("copy from user fail");
 		return -EFAULT;
 	}
 
@@ -2656,7 +2693,7 @@ static int gtp_power_switch(struct i2c_client *client, int on)
 	static int is_on;
 	static struct regulator *vcc_i2c;
 
-	GTP_INFO("%s: power %s\n",
+	GTP_INFO("%s: power %s",
 	__func__, on?"on":"off");
 
         if (is_on == on)
@@ -2852,7 +2889,7 @@ static int goodix_ts_probe(struct i2c_client *client,
 				0660, NULL, &config_proc_ops);
 
 	if (gt91xx_config_proc == NULL)
-		GTP_ERROR("create_proc_entry %s failed\n",
+		GTP_ERROR("create_proc_entry %s failed",
 				GT91XX_CONFIG_PROC_FILE);
 	else
 		GTP_INFO("create proc entry %s success",
@@ -2863,7 +2900,7 @@ static int goodix_ts_probe(struct i2c_client *client,
 				0444, NULL, &fw_version_proc_ops);
 
 	if (gt91xx_fw_version_proc == NULL)
-		GTP_ERROR("create_proc_entry %s failed\n",
+		GTP_ERROR("create_proc_entry %s failed",
 				GT91XX_FW_VERSION_PROC_FILE);
 	else
 		GTP_INFO("create proc entry %s success",
@@ -2940,12 +2977,12 @@ static int goodix_ts_remove(struct i2c_client *client)
 			free_irq(client->irq, ts);
 		} else
 			hrtimer_cancel(&ts->timer);
+		i2c_set_clientdata(client, NULL);
+		input_unregister_device(ts->input_dev);
+		kfree(ts);
 	}
 
 	GTP_INFO("GTP driver removing...");
-	i2c_set_clientdata(client, NULL);
-	input_unregister_device(ts->input_dev);
-	kfree(ts);
 	return 0;
 }
 
@@ -2980,6 +3017,9 @@ static void goodix_ts_suspend(struct goodix_ts_data *ts)
 	}
 #endif
 #endif
+
+	if (goodix_wq)
+		flush_workqueue(goodix_wq);
 
 #if GTP_GESTURE_WAKEUP
 	ret = gtp_enter_doze(ts);
@@ -3041,6 +3081,8 @@ static void goodix_ts_resume(struct goodix_ts_data *ts)
 #if GTP_SUSPEND_PWROFF
 	ret = gtp_power_switch(ts->client, 1);
 	mdelay(10);
+	if (ts->use_irq)
+		gtp_irq_disable(ts);
 	gtp_reset_guitar(ts->client, 20);
 #else
 	if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT) {
@@ -3066,6 +3108,7 @@ static void goodix_ts_resume(struct goodix_ts_data *ts)
 
 		gtp_send_cfg(ts->client);
 
+	ts->gtp_is_suspend = 0;
 
 	if (ts->use_irq)
 
@@ -3076,7 +3119,6 @@ static void goodix_ts_resume(struct goodix_ts_data *ts)
 		ktime_set(1, 0), HRTIMER_MODE_REL);
 	}
 
-	ts->gtp_is_suspend = 0;
 #if GTP_ESD_PROTECT
 	gtp_esd_switch(ts->client, SWITCH_ON);
 #endif
@@ -3467,7 +3509,11 @@ static void gtp_esd_check_func(struct work_struct *work)
 			gtp_power_switch(ts->client, 1);
 			msleep(20);
 #endif
+			if (ts->use_irq)
+				gtp_irq_disable(ts);
 			gtp_reset_guitar(ts->client, 50);
+			if (ts->use_irq)
+				gtp_irq_enable(ts);
 			msleep(50);
 			gtp_send_cfg(ts->client);
 		}

@@ -250,10 +250,6 @@ struct snd_pcm_substream *substream)
 		Awb_Block->u4WriteIdx);
 
 	if (TDM_VUL_Control_context->interruptTrigger == 1) {
-
-		Previous_Hw_cur = Awb_Block->u4WriteIdx;
-		return Awb_Block->u4WriteIdx >> 2;
-
 		HW_Cur_ReadIdx = Align64ByteSize(Afe_Get_Reg(AFE_AWB_CUR));
 		if (HW_Cur_ReadIdx == 0) {
 			PRINTK_AUD_UL1
@@ -268,8 +264,8 @@ struct snd_pcm_substream *substream)
 		TDM_VUL_Control_context->interruptTrigger = 0;
 		return (HW_memory_index >> 2);
 	}
-	return (Previous_Hw_cur >> 2);
-
+	Previous_Hw_cur = Awb_Block->u4WriteIdx;
+	return Awb_Block->u4WriteIdx >> 2;
 }
 
 static void SetVULBuffer(

@@ -26,7 +26,9 @@ compat_get_disp_caps_info(struct compat_disp_caps_info __user *data32,
 			  struct disp_caps_info __user *data)
 {
 	compat_uint_t u;
+	compat_int_t i;
 	int err = 0;
+	int j, k;
 
 	err = get_user(u, &(data32->output_mode));
 	err |= put_user(u, &(data->output_mode));
@@ -48,6 +50,27 @@ compat_get_disp_caps_info(struct compat_disp_caps_info __user *data32,
 	err |= get_user(u, &(data32->is_support_frame_cfg_ioctl));
 	err |= put_user(u, &(data->is_support_frame_cfg_ioctl));
 
+	err |= get_user(i, &(data32->is_output_rotated));
+	err |= put_user(i, &(data->is_output_rotated));
+
+	err |= get_user(i, &(data32->lcm_degree));
+	err |= put_user(i, &(data->lcm_degree));
+
+	for (j = 0; j < ARRAY_SIZE(data32->rsz_in_res_list); j++) {
+		for (k = 0; k < ARRAY_SIZE(data32->rsz_in_res_list[0]); k++) {
+			err |= get_user(u, &(data32->rsz_in_res_list[j][k]));
+			err |= put_user(u, &(data->rsz_in_res_list[j][k]));
+		}
+	}
+
+	err |= get_user(u, &(data32->rsz_list_length));
+	err |= put_user(u, &(data->rsz_list_length));
+
+	for (j = 0; j < ARRAY_SIZE(data32->rsz_in_max); j++) {
+		err |= get_user(u, &(data32->rsz_in_max[j]));
+		err |= put_user(u, &(data->rsz_in_max[j]));
+	}
+
 	return err;
 }
 
@@ -56,7 +79,9 @@ compat_put_disp_caps_info(struct compat_disp_caps_info __user *data32,
 			  struct disp_caps_info __user *data)
 {
 	compat_uint_t u;
+	compat_int_t i;
 	int err = 0;
+	int j, k;
 
 	err = get_user(u, &(data->output_mode));
 	err |= put_user(u, &(data32->output_mode));
@@ -78,6 +103,27 @@ compat_put_disp_caps_info(struct compat_disp_caps_info __user *data32,
 	err |= get_user(u, &(data->is_support_frame_cfg_ioctl));
 	err |= put_user(u, &(data32->is_support_frame_cfg_ioctl));
 
+	err |= get_user(i, &(data->is_output_rotated));
+	err |= put_user(i, &(data32->is_output_rotated));
+
+	err |= get_user(i, &(data->lcm_degree));
+	err |= put_user(i, &(data32->lcm_degree));
+
+	for (j = 0; j < ARRAY_SIZE(data32->rsz_in_res_list); j++) {
+		for (k = 0; k < ARRAY_SIZE(data32->rsz_in_res_list[0]); k++) {
+			err |= get_user(u, &(data->rsz_in_res_list[j][k]));
+			err |= put_user(u, &(data32->rsz_in_res_list[j][k]));
+		}
+	}
+
+	err |= get_user(u, &(data->rsz_list_length));
+	err |= put_user(u, &(data32->rsz_list_length));
+
+	for (j = 0; j < ARRAY_SIZE(data32->rsz_in_max); j++) {
+		err |= get_user(u, &(data->rsz_in_max[j]));
+		err |= put_user(u, &(data32->rsz_in_max[j]));
+	}
+
 	return err;
 }
 
@@ -86,6 +132,7 @@ compat_get_disp_output_config(struct compat_disp_output_config __user *data32,
 			      struct disp_output_config __user *data)
 {
 	compat_uint_t u;
+	compat_int_t i;
 	compat_uptr_t p;
 	int err = 0;
 
@@ -125,6 +172,12 @@ compat_get_disp_output_config(struct compat_disp_output_config __user *data32,
 	err |= get_user(u, &(data32->interface_idx));
 	err |= put_user(u, &(data->interface_idx));
 
+	err |= get_user(i, &(data32->src_fence_fd));
+	err |= put_user(i, &(data->src_fence_fd));
+
+	err |= get_user(p, (unsigned long *)&(data32->src_fence_struct));
+	err |= put_user(p, (unsigned long *)&(data->src_fence_struct));
+
 	err |= get_user(u, &(data32->frm_sequence));
 	err |= put_user(u, &(data->frm_sequence));
 
@@ -153,6 +206,7 @@ compat_get_disp_input_config(struct compat_disp_input_config __user *data32,
 	compat_uint_t u;
 	compat_int_t i;
 	compat_uptr_t p;
+	compat_s64 s64;
 	int err = 0;
 
 	err |= get_user(u, &(data32->layer_id));
@@ -248,9 +302,52 @@ compat_get_disp_input_config(struct compat_disp_input_config __user *data32,
 	err |= get_user(i, &(data32->frm_sequence));
 	err |= put_user(i, &(data->frm_sequence));
 
+	err |= get_user(u, &(data32->dim_color));
+	err |= put_user(u, &(data->dim_color));
+
 	err |= get_user(u, &(data32->yuv_range));
 	err |= put_user(u, &(data->yuv_range));
 
+	err |= get_user(u, &(data32->fps));
+	err |= put_user(u, &(data->fps));
+
+	err |= get_user(s64, &(data32->timestamp));
+	err |= put_user(s64, &(data->timestamp));
+
+	err |= get_user(u, &(data32->ext_sel_layer));
+	err |= put_user(u, &(data->ext_sel_layer));
+
+	err |= get_user(i, &(data32->src_fence_fd));
+	err |= put_user(i, &(data->src_fence_fd));
+
+	err |= get_user(p, (unsigned long *)&(data32->dirty_roi_addr));
+	err |= put_user(p, (unsigned long *)&(data->dirty_roi_addr));
+
+	err |= get_user(u, &(data32->dirty_roi_num));
+	err |= put_user(u, &(data->dirty_roi_num));
+
+	return err;
+}
+
+static int compat_get_disp_ccorr_config(
+	struct compat_disp_ccorr_config __user *data32,
+	struct disp_ccorr_config __user *data)
+{
+	compat_int_t i;
+	bool l;
+	int err = 0;
+	int j;
+
+	err |= get_user(l, &(data32->is_dirty));
+	err |= put_user(l, &(data->is_dirty));
+
+	err |= get_user(i, &(data32->mode));
+	err |= put_user(i, &(data->mode));
+
+	for (j = 0; j < ARRAY_SIZE(data32->color_matrix); j++) {
+		err |= get_user(i, &(data32->color_matrix[j]));
+		err |= put_user(i, &(data->color_matrix[j]));
+	}
 	return err;
 }
 
@@ -275,6 +372,8 @@ static int compat_get_disp_session_input_config(
 	for (j = 0; j < ARRAY_SIZE(data32->config); j++)
 		err |= compat_get_disp_input_config(&data32->config[j],
 						    &data->config[j]);
+	err |= compat_get_disp_ccorr_config(
+		&data32->ccorr_config, &data->ccorr_config);
 
 	return err;
 }
@@ -366,6 +465,15 @@ compat_get_disp_session_info(struct compat_disp_session_info __user *data32,
 	err |= get_user(i, &(data32->physicalHeight));
 	err |= put_user(i, &(data->physicalHeight));
 
+	err |= get_user(u, &(data32->physicalWidthUm));
+	err |= put_user(u, &(data->physicalWidthUm));
+
+	err |= get_user(u, &(data32->physicalHeightUm));
+	err |= put_user(u, &(data->physicalHeightUm));
+
+	err |= get_user(u, &(data32->density));
+	err |= put_user(u, &(data->density));
+
 	err |= get_user(i, &(data32->isConnected));
 	err |= put_user(i, &(data->isConnected));
 
@@ -424,6 +532,15 @@ compat_put_disp_session_info(struct compat_disp_session_info __user *data32,
 
 	err |= get_user(i, &(data->physicalHeight));
 	err |= put_user(i, &(data32->physicalHeight));
+
+	err |= get_user(u, &(data->physicalWidthUm));
+	err |= put_user(u, &(data32->physicalWidthUm));
+
+	err |= get_user(u, &(data->physicalHeightUm));
+	err |= put_user(u, &(data32->physicalHeightUm));
+
+	err |= get_user(u, &(data->density));
+	err |= put_user(u, &(data32->density));
 
 	err |= get_user(i, &(data->isConnected));
 	err |= put_user(i, &(data32->isConnected));

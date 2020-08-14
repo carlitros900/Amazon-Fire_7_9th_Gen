@@ -422,6 +422,7 @@ static const struct reg_default rt5518_reg[] = {
 static void rt5518_enable_dsp_clock(void *param)
 {
 	struct rt551x_priv *rt551x = (struct rt551x_priv *)param;
+	int val = 0;
 	regmap_write(rt551x->regmap, 0x18002000,0x000010ec); //<SW reset> regtop reset
 	regmap_write(rt551x->regmap, 0x18002000,0x55185518); //<SW reset> minicore reset
 	regmap_write(rt551x->regmap, 0x18002000,0x23792379); //<SW reset> minitop reset
@@ -444,7 +445,11 @@ static void rt5518_enable_dsp_clock(void *param)
 	regmap_write(rt551x->regmap, 0x18002194,0x0002082f); //(ad0)source of AMIC_IN
 	regmap_write(rt551x->regmap, 0x18002198,0x10000162); //(ad0)ad0 compensation gain = 0dB
 	regmap_write(rt551x->regmap, 0x180020D0,hw_digital_gain & RT551X_HW_DIGITAL_GAIN_MASK); //(ad2) gain=12dB by default
-	regmap_write(rt551x->regmap, 0x18001114,0x00000001); //dsp clk auto switch enable for 5518B and later chips
+	regmap_read(rt551x->regmap, 0x18002ff0, &val);       //ID1, get chip version, 0 is 5518, 1 is 5518B
+	if ((val & RT551X_VENDOR_ID1_MASK) == RT551X_VENDOR_ID1_5518)
+		regmap_write(rt551x->regmap, 0x18001114,0x00000000); //dsp clk auto switch disable for 5518 chip
+	else // RT551X_VENDOR_ID1_5518B or later chip version
+		regmap_write(rt551x->regmap, 0x18001114,0x00000001); //dsp clk auto switch enable for 5518B and later chips
 	regmap_write(rt551x->regmap, 0x18001118,0x00000001); //reduce DSP power
 	regmap_write(rt551x->regmap, 0x18002228,0x00000140 | (hw_analog_gain & RT551X_GAIN_INBUF_MASK)); //fix INBUF bias (INBUF=15dB by default)
 	regmap_write(rt551x->regmap, 0x1800221c,0x00171023); //fix ADC2 bias
@@ -474,7 +479,7 @@ static void rt5518_enable_dsp(void *param)
 static void rt5518_reset(void *param)
 {
 	struct rt551x_priv *rt551x = (struct rt551x_priv *)param;
-	int val,val2;
+	int val = 0, val2 = 0;
 	regmap_write(rt551x->regmap, 0x18002000, 0x000010ec);  //<SW reset> regtop reset
 	regmap_write(rt551x->regmap, 0x18002000, 0x55185518);  //<SW reset> minicore reset
 	regmap_write(rt551x->regmap, 0x18002000, 0x23792379);  //<SW reset> minitop reset
@@ -1539,7 +1544,7 @@ static irqreturn_t rt551x_irq_handler(int irq, void *dev_id)
 
 static void rt551x_handler_work(struct work_struct *work)
 {
-	int iVdIdVal, wdg_status = 0;
+	int iVdIdVal = 0, wdg_status = 0;
 	struct rt551x_priv *rt551x = container_of(work, struct rt551x_priv, handler_work);
 
 	regcache_cache_bypass(rt551x->regmap, true);
@@ -1778,8 +1783,8 @@ static ssize_t rt551x_i2c_reg_show(struct device *dev,
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rt551x_priv *rt551x = i2c_get_clientdata(client);
 	int count = 0;
-	unsigned int i, value;
-	int ret;
+	unsigned int i = 0, value = 0;
+	int ret = 0;
 
 	regcache_cache_bypass(rt551x->regmap, true);
 	for (i = RT551X_BUFFER_VOICE_BASE; i <= RT551X_MBIST_DRAM_5; i+=4) {
@@ -1969,8 +1974,8 @@ static void rt5518_gain_init(void)
 static int rt551x_i2c_probe(struct i2c_client *i2c,
 		    const struct i2c_device_id *id)
 {
-	struct rt551x_priv *rt551x;
-	int ret;
+	struct rt551x_priv *rt551x = NULL;
+	int ret = 0;
 
 	rt551x = devm_kzalloc(&i2c->dev, sizeof(struct rt551x_priv),
 				GFP_KERNEL);

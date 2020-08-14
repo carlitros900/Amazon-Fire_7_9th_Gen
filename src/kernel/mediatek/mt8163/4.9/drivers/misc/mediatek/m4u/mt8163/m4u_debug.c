@@ -640,9 +640,10 @@ static int m4u_debug_set(void *data, u64 val)
 	case 22:
 		{
 			int i;
-			unsigned int *pSrc;
+			unsigned int *pSrc = NULL;
 
 			pSrc = vmalloc(128);
+			if (pSrc) {
 			memset(pSrc, 55, 128);
 			m4u_cache_sync(NULL, 0, 0, 0, 0, M4U_CACHE_FLUSH_ALL);
 
@@ -654,6 +655,7 @@ static int m4u_debug_set(void *data, u64 val)
 				       pSrc[i + 6], pSrc[i + 7]);
 			}
 			vfree(pSrc);
+			}
 
 		}
 		break;

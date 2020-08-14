@@ -326,7 +326,8 @@ void fgauge_get_profile_id(void)
 	int id;
 	int ret;
 
-	ret = get_pin_id_volt(0, &id_volt);
+	ret = get_pin_id_volt(batt_meter_cust_data.battery_id_channel_number,
+		&id_volt);
 	if (ret != 0 || id_volt == 0)
 		pr_notice("[fgauge_get_profile_id]id_volt read fail\n");
 	else
@@ -354,7 +355,8 @@ bool get_battery_id_status(void)
 	int ret, id_volt;
 	bool id_connect = true;
 
-	ret = get_pin_id_volt(0, &id_volt);
+	ret = get_pin_id_volt(batt_meter_cust_data.battery_id_channel_number,
+		&id_volt);
 	if ((id_volt > id_volt_max) || (id_volt < id_volt_min)) {
 		pr_notice("[%s] battery ID disconnect(%d) id_volt_max:%d id_volt_min:%d \n",
 				__func__, id_volt,id_volt_max,id_volt_min);
@@ -879,6 +881,10 @@ int __batt_meter_init_cust_data_from_dt(void)
 		&batt_meter_cust_data.temperature_t);
 
 #ifdef CONFIG_MTK_MULTI_BAT_PROFILE_SUPPORT
+	batt_meter_cust_data.battery_id_channel_number = BATTERY_ID_CHANNEL_NUM;
+	__batt_meter_parse_node(np, "battery_id_channel_number",
+		&batt_meter_cust_data.battery_id_channel_number);
+
 	__batt_meter_parse_node(np, "id_volt_max", &id_volt_max);
 
 	__batt_meter_parse_node(np, "id_volt_min", &id_volt_min);
@@ -1654,6 +1660,8 @@ void fgauge_construct_battery_profile_init(void)
 	profile_p[4] = fgauge_get_profile(batt_meter_cust_data.temperature_t3);
 	saddles = fgauge_get_saddles();
 	temp_profile_p = kmalloc(51 * sizeof(*temp_profile_p), GFP_KERNEL);
+	if (!temp_profile_p)
+		return;
 	memset(temp_profile_p, 0, 51 * sizeof(*temp_profile_p));
 	for (i = 0; i < PROFILE_SIZE; i++) {
 		profile_index = 0;
@@ -2918,14 +2926,17 @@ void table_init(void)
 	if (profile_p_r_table == NULL) {
 		pr_err(
 			 "[FGADC] fgauge_get_profile_r_table : create table fail !\r\n");
+		return;
 	}
 	fgauge_construct_r_table_profile(
 		temperature, profile_p_r_table);
 
 	/* Re-constructure battery profile according to current temperature */
 	profile_p = fgauge_get_profile(batt_meter_cust_data.temperature_t);
-	if (profile_p == NULL)
+	if (profile_p == NULL) {
 		pr_err("[FGADC] fgauge_get_profile : create table fail !\r\n");
+		return;
+	}
 
 	fgauge_construct_battery_profile(temperature, profile_p);
 }
@@ -3174,9 +3185,14 @@ signed int battery_meter_get_car(void)
 	return val;
 }
 
+signed int battery_meter_get_charge_full(void)
+{
+	return 1000 * g_fg_dbg_bat_qmax;
+}
+
 signed int battery_meter_get_charge_counter(void)
 {
-	return g_fg_dbg_bat_car;
+	return 1000 * g_fg_dbg_bat_qmax * g_fg_dbg_percentage / 100;
 }
 
 signed int battery_meter_get_battery_temperature(void)
@@ -3783,7 +3799,7 @@ static ssize_t show_FG_g_slp_current(struct device *dev,
 {
 	return sprintf(buf, "%d\n", g_slp_current);
 }
-static DEVICE_ATTR(FG_g_slp_current, 0640, show_FG_g_slp_current, NULL);
+static DEVICE_ATTR(FG_g_slp_current, 0444, show_FG_g_slp_current, NULL);
 
 
 static ssize_t show_FG_g_fg_dbg_bat_volt(struct device *dev,

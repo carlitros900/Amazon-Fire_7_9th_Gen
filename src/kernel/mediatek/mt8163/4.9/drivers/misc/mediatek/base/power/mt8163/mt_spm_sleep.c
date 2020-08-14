@@ -522,6 +522,14 @@ u32 spm_get_sleep_wakesrc(void)
 	return __spm_suspend.pwrctrl->wake_src;
 }
 
+static u32 last_wakesrc;
+
+u32 spm_get_last_wakeup_src(void)
+{
+	return last_wakesrc;
+}
+EXPORT_SYMBOL(spm_get_last_wakeup_src);
+
 int spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 {
 	u32 sec = 2;
@@ -598,6 +606,8 @@ int spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 	spm_trigger_wfi_for_sleep(pwrctrl);
 
 	__spm_get_wakeup_status(&wakesta);
+
+	last_wakesrc = wakesta.r12;
 
 	spm_clean_after_wakeup();
 

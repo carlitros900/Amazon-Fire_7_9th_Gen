@@ -94,8 +94,6 @@ unsigned int als_count_1 = 0, als_count_2 = 0, setok = 0;
 u8 old_range = 4;
 unsigned int als_compensation = 100;
 const unsigned int default_als_compensation = 100; /* default als compensation */
-unsigned int black_als_range = 4;	/* the default als range of black devices */
-unsigned int white_als_range = 3;	/* the default als range of white devices */
 #define STK3X1X_CAL_FILE            "/data/als_cal_data.bin"
 #define STK3x1x_DATA_BUF_NUM        1
 #define Default_cali                2
@@ -470,11 +468,16 @@ int stk3x1x_read_als(struct i2c_client *client, u16 *data)
 	}
 
 #ifdef CONFIG_MTK_JSA1214_SWITCH_RANGE_AUTO
-	if (capcolor == default_black_color)
-		range[0] = black_als_range;	/* black devices light sensor enable */
-	else
-		range[0] = white_als_range;	/* white devices light sensor enable */
-
+	if (capcolor == default_black_color) {
+		range[0] = 0x04;	/* black devices light sensor enable */
+	} else {
+#ifdef CONFIG_ALS_WHITE_RANGE_CHANGE
+		if (als_compensation == default_als_compensation)
+			range[0] = 0x04;
+		else
+#endif
+		range[0] = 0x03;	/* white devices light sensor enable */
+	}
 	ret = stk3x1x_master_send(client, 0x0B, &range[0], 1);
 
 	/* ALS PD Reading & dynamic range */
@@ -1142,9 +1145,9 @@ static int stk3x1x_init_client(struct i2c_client *client)
 	thres[1] = 0x00;	/* ALS high threshold is set 4000 */
 	thres[2] = 0xFA;
 	if (capcolor == default_black_color)
-		range[0] = black_als_range;	/* black devices light sensor enable */
+		range[0] = 0x04;	/* black devices light sensor enable */
 	else
-		range[0] = white_als_range;	/* white devices light sensor enable */
+		range[0] = 0x03;	/* white devices light sensor enable */
 #else
 	range[0] = 0x04;	/* light sensor enable */
 #endif
@@ -3161,12 +3164,11 @@ static int stk3x1x_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	alscal_is_old = search_non_dvt_new_alscal();
 #endif
 
+#ifdef CONFIG_ALS_WHITE_RANGE_CHANGE
 	if (!(capcolor == default_black_color) && !(obj->hw->als_compensation == 0))
 		als_compensation = obj->hw->als_compensation;
-	if (obj->hw->black_als_range > 0)
-		black_als_range = obj->hw->black_als_range;
-	if (obj->hw->white_als_range > 0)
-		white_als_range = obj->hw->white_als_range;
+#endif
+
 	if (obj->hw->polling_mode_ps == 0) {
 		APS_LOG("%s: enable PS interrupt\n", __FUNCTION__);
 	}

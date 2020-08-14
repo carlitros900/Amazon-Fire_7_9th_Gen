@@ -14,6 +14,9 @@
 #ifndef __DISP_SESSION_H
 #define __DISP_SESSION_H
 
+#include <linux/types.h>
+
+
 #define DISP_SESSION_DEVICE "mtk_disp_mgr"
 
 #define DISP_NO_ION_FD ((int)(~0U >> 1))
@@ -26,6 +29,7 @@
 #define DISP_SESSION_DEV(id) ((id)&0xff)
 #define MAKE_DISP_SESSION(type, dev) (unsigned int)((type) << 16 | (dev))
 
+#define RSZ_RES_LIST_NUM 4
 /*
  * ============================================================================
  */
@@ -41,7 +45,8 @@ enum DISP_IF_TYPE {
 	DISP_IF_HDMI = 7,
 	DISP_IF_HDMI_SMARTBOOK,
 	DISP_IF_MHL,
-	DISP_IF_EPD
+	DISP_IF_EPD,
+	DISP_IF_SLIMPORT
 };
 
 enum DISP_IF_FORMAT {
@@ -50,7 +55,10 @@ enum DISP_IF_FORMAT {
 	DISP_IF_FORMAT_RGB888
 };
 
-enum DISP_IF_MODE { DISP_IF_MODE_VIDEO = 0, DISP_IF_MODE_COMMAND };
+enum DISP_IF_MODE {
+	DISP_IF_MODE_VIDEO = 0,
+	DISP_IF_MODE_COMMAND
+};
 
 enum DISP_ORIENTATION {
 	DISP_ORIENTATION_0 = 0,
@@ -77,6 +85,13 @@ enum DISP_FORMAT {
 	DISP_FORMAT_UYVY = MAKE_DISP_FORMAT_ID(13, 2),
 	DISP_FORMAT_YUV420_P = MAKE_DISP_FORMAT_ID(14, 2),
 	DISP_FORMAT_YV12 = MAKE_DISP_FORMAT_ID(16, 1), /* BPP = 1.5 */
+	DISP_FORMAT_PARGB8888 = MAKE_DISP_FORMAT_ID(17, 4),
+	DISP_FORMAT_PABGR8888 = MAKE_DISP_FORMAT_ID(18, 4),
+	DISP_FORMAT_PRGBA8888 = MAKE_DISP_FORMAT_ID(19, 4),
+	DISP_FORMAT_PBGRA8888 = MAKE_DISP_FORMAT_ID(20, 4),
+	DISP_FORMAT_DIM = MAKE_DISP_FORMAT_ID(21, 0),
+	DISP_FORMAT_RGBA1010102 = MAKE_DISP_FORMAT_ID(22, 4),
+	DISP_FORMAT_RGBA_FP16 = MAKE_DISP_FORMAT_ID(23, 4),
 	DISP_FORMAT_BPP_MASK = 0xFF,
 };
 
@@ -187,6 +202,13 @@ struct disp_session_vsync_config {
 	int lcm_fps;
 };
 
+struct layer_dirty_roi {
+	__u16 dirty_x;
+	__u16 dirty_y;
+	__u16 dirty_w;
+	__u16 dirty_h;
+};
+
 struct disp_input_config {
 	unsigned int layer_id;
 	unsigned int layer_enable;
@@ -223,7 +245,15 @@ struct disp_input_config {
 	enum DISP_ALPHA_TYPE src_alpha;
 	enum DISP_ALPHA_TYPE dst_alpha;
 	unsigned int frm_sequence;
+	__u32 dim_color;
 	enum DISP_YUV_RANGE_ENUM yuv_range;
+
+	unsigned int fps;
+	int64_t timestamp;
+	unsigned int ext_sel_layer;
+	int src_fence_fd;
+	void  *dirty_roi_addr;
+	unsigned int dirty_roi_num;
 };
 
 struct disp_output_config {
@@ -239,7 +269,17 @@ struct disp_output_config {
 	enum DISP_BUFFER_TYPE security;
 	unsigned int buff_idx;
 	unsigned int interface_idx;
+	/* fence to be waited before using this buffer. -1 if invalid */
+	int src_fence_fd;
+	/* fence struct of src_fence_fd, used in kernel */
+	void *src_fence_struct;
 	unsigned int frm_sequence;
+};
+
+struct disp_ccorr_config {
+	bool is_dirty;
+	int mode;
+	int color_matrix[16];
 };
 
 struct disp_session_input_config {
@@ -247,6 +287,7 @@ struct disp_session_input_config {
 	unsigned int session_id;
 	unsigned int config_layer_num;
 	struct disp_input_config config[8];
+	struct disp_ccorr_config ccorr_config;
 };
 
 struct disp_session_output_config {
@@ -279,8 +320,13 @@ struct disp_frame_cfg {
 	/* trigger config */
 	enum DISP_MODE mode;
 	unsigned int present_fence_idx;
+	int prev_present_fence_fd;
+	void *prev_present_fence_struct;
 	enum EXTD_TRIGGER_MODE tigger_mode;
 	enum DISP_SESSION_USER user;
+
+	/* ccorr config */
+	struct disp_ccorr_config ccorr_config;
 };
 
 struct disp_session_info {
@@ -295,6 +341,11 @@ struct disp_session_info {
 	unsigned int vsyncFPS;
 	unsigned int physicalWidth;
 	unsigned int physicalHeight;
+	/* length: um, for more precise precision */
+	unsigned int physicalWidthUm;
+	/* length: um, for more precise precision */
+	unsigned int physicalHeightUm;
+	unsigned int density;
 	unsigned int isConnected;
 	unsigned int isHDCPSupported;
 	unsigned int isOVLDisabled;
@@ -321,7 +372,7 @@ struct disp_present_fence {
 	/* input */
 	unsigned int session_id;
 	/* output */
-	unsigned int present_fence_fd;
+	int present_fence_fd;
 	unsigned int present_fence_index;
 };
 
@@ -347,6 +398,13 @@ enum DISP_CAP_OUTPUT_PASS {
 
 enum DISP_FEATURE {
 	DISP_FEATURE_TIME_SHARING = 0x00000001,
+	DISP_FEATURE_HRT = 0x00000002,
+	DISP_FEATURE_PARTIAL = 0x00000004,
+	DISP_FEATURE_FENCE_WAIT = 0x00000008,
+	DISP_FEATURE_RSZ = 0x00000010,
+	DISP_FEATURE_NO_PARGB = 0x00000020,
+	DISP_FEATURE_DISP_SELF_REFRESH = 0x00000040,
+	DISP_FEATURE_RPO = 0x00000080,
 };
 
 struct disp_caps_info {
@@ -358,11 +416,65 @@ struct disp_caps_info {
 #endif
 	unsigned int disp_feature;
 	int is_support_frame_cfg_ioctl;
+	int is_output_rotated;
+	int lcm_degree;
+	/* resizer input resolution list
+	 * format:
+	 *   sequence from big resolution to small
+	 *   portrait width first then height
+	 */
+	unsigned int rsz_in_res_list[RSZ_RES_LIST_NUM][2];
+	unsigned int rsz_list_length;
+	/* portrait { width, height } */
+	unsigned int rsz_in_max[2];
 };
 
 struct disp_session_buf_info {
 	unsigned int session_id;
 	unsigned int buf_hnd[3];
+};
+
+enum LAYERING_CAPS {
+	LAYERING_OVL_ONLY = 0x00000001,
+	MDP_RSZ_LAYER =		0x00000002,
+	DISP_RSZ_LAYER =	0x00000004,
+	MDP_ROT_LAYER =		0x00000008,
+};
+
+struct layer_config {
+	unsigned int ovl_id;
+	enum DISP_FORMAT src_fmt;
+	unsigned int dst_offset_x, dst_offset_y;
+	unsigned int dst_width, dst_height;
+	int ext_sel_layer;
+	unsigned int src_width, src_height;
+	unsigned int layer_caps;
+};
+
+struct disp_layer_info {
+	struct layer_config *input_config[2];
+	int disp_mode[2];
+	int layer_num[2];
+	int gles_head[2];
+	int gles_tail[2];
+	int hrt_num;
+};
+
+enum DISP_SCENARIO {
+	DISP_SCENARIO_NORMAL,
+	DISP_SCENARIO_SELF_REFRESH,
+};
+struct disp_scenario_config_t {
+	unsigned int session_id;
+	unsigned int scenario;
+};
+
+enum DISP_SELF_REFRESH_TYPE {
+	WAIT_FOR_REFRESH,
+	REFRESH_FOR_ANTI_LATENCY2,
+	REFRESH_FOR_SWITCH_DECOUPLE,
+	REFRESH_FOR_SWITCH_DECOUPLE_MIRROR,
+	REFRESH_TYPE_NUM,
 };
 
 /* IOCTL commands. */
@@ -376,9 +488,9 @@ struct disp_session_buf_info {
 #define DISP_IOCTL_TRIGGER_SESSION DISP_IOW(203, struct disp_session_config)
 #define DISP_IOCTL_PREPARE_INPUT_BUFFER DISP_IOW(204, struct disp_buffer_info)
 #define DISP_IOCTL_PREPARE_OUTPUT_BUFFER DISP_IOW(205, struct disp_buffer_info)
-#define DISP_IOCTL_SET_INPUT_BUFFER                                            \
+#define DISP_IOCTL_SET_INPUT_BUFFER		\
 	DISP_IOW(206, struct disp_session_input_config)
-#define DISP_IOCTL_SET_OUTPUT_BUFFER                                           \
+#define DISP_IOCTL_SET_OUTPUT_BUFFER	\
 	DISP_IOW(207, struct disp_session_output_config)
 #define DISP_IOCTL_GET_SESSION_INFO DISP_IOW(208, struct disp_session_info)
 
@@ -386,18 +498,22 @@ struct disp_session_buf_info {
 #define DISP_IOCTL_GET_SESSION_MODE DISP_IOW(210, struct disp_session_config)
 #define DISP_IOCTL_SET_SESSION_TYPE DISP_IOW(211, struct disp_session_config)
 #define DISP_IOCTL_GET_SESSION_TYPE DISP_IOW(212, struct disp_session_config)
-#define DISP_IOCTL_WAIT_FOR_VSYNC                                              \
+#define DISP_IOCTL_WAIT_FOR_VSYNC	\
 	DISP_IOW(213, struct disp_session_vsync_config)
-#define DISP_IOCTL_SET_MAX_LAYER_NUM                                           \
+#define DISP_IOCTL_SET_MAX_LAYER_NUM	\
 	DISP_IOW(214, struct disp_session_layer_num_config)
-#define DISP_IOCTL_SET_VSYNC_FPS DISP_IOW(215, unsigned int)
+#define DISP_IOCTL_SET_VSYNC_FPS DISP_IOW(216, unsigned int)
 
-#define DISP_IOCTL_GET_PRESENT_FENCE DISP_IOW(216, struct disp_present_fence)
+#define DISP_IOCTL_GET_PRESENT_FENCE DISP_IOW(217, struct disp_present_fence)
 
-#define DISP_IOCTL_GET_IS_DRIVER_SUSPEND DISP_IOW(217, unsigned int)
-#define DISP_IOCTL_GET_DISPLAY_CAPS DISP_IOW(218, struct disp_caps_info)
-#define DISP_IOCTL_INSERT_SESSION_BUFFERS                                      \
-	DISP_IOW(219, struct disp_session_buf_info)
-#define DISP_IOCTL_FRAME_CONFIG DISP_IOW(220, struct disp_session_output_config)
+#define DISP_IOCTL_GET_IS_DRIVER_SUSPEND DISP_IOW(218, unsigned int)
+#define DISP_IOCTL_GET_DISPLAY_CAPS DISP_IOW(219, struct disp_caps_info)
+#define DISP_IOCTL_INSERT_SESSION_BUFFERS	\
+	DISP_IOW(220, struct disp_session_buf_info)
+#define DISP_IOCTL_FRAME_CONFIG DISP_IOW(221, struct disp_session_output_config)
+#define DISP_IOCTL_QUERY_VALID_LAYER DISP_IOW(222, disp_layer_info)
 
+#define	DISP_IOCTL_SET_SCENARIO	DISP_IOW(223, struct disp_scenario_config_t)
+#define	DISP_IOCTL_WAIT_ALL_JOBS_DONE DISP_IOW(224, unsigned int)
+#define DISP_IOCTL_WAIT_DISP_SELF_REFRESH DISP_IOW(227, unsigned int)
 #endif /* __DISP_SESSION_H */

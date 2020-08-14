@@ -94,4 +94,5 @@ int hns_nic_init_phy(struct net_device *ndev, struct hnae_handle *h);
 netdev_tx_t hns_nic_net_xmit_hw(struct net_device *ndev,
 				struct sk_buff *skb,
 				struct hns_nic_ring_data *ring_data);
+
 #endif	/**__HNS_ENET_H */

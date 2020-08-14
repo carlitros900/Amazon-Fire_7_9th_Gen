@@ -787,7 +787,7 @@ static int mtk_pcm_I2S0dl1_copy(struct snd_pcm_substream *substream,
 				Afe_Block->pucVirtBufAddr + Afe_WriteIdx_tmp,
 				data_w_ptr, copy_size);
 
-				if (copy_from_user((Afe_Block->pucVirtBufAddr +
+				if (copy_from_user_toio((Afe_Block->pucVirtBufAddr +
 					Afe_WriteIdx_tmp),
 					data_w_ptr, copy_size)) {
 					PRINTK_AUDDRV("Fail copy from user\n");
@@ -831,7 +831,7 @@ static int mtk_pcm_I2S0dl1_copy(struct snd_pcm_substream *substream,
 				Afe_Block->pucVirtBufAddr + Afe_WriteIdx_tmp,
 				data_w_ptr, size_1);
 
-				if ((copy_from_user(
+				if ((copy_from_user_toio(
 					(Afe_Block->pucVirtBufAddr +
 					Afe_WriteIdx_tmp),
 					data_w_ptr, size_1))) {
@@ -859,7 +859,7 @@ static int mtk_pcm_I2S0dl1_copy(struct snd_pcm_substream *substream,
 				Afe_Block->pucVirtBufAddr + Afe_WriteIdx_tmp,
 				data_w_ptr + size_1, size_2);
 
-				if ((copy_from_user((Afe_Block->pucVirtBufAddr +
+				if ((copy_from_user_toio((Afe_Block->pucVirtBufAddr +
 					Afe_WriteIdx_tmp),
 					(data_w_ptr + size_1), size_2))) {
 					PRINTK_AUDDRV("Fail 2\n");

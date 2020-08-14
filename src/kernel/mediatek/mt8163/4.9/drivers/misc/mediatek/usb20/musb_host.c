@@ -1067,9 +1067,9 @@ static void musb_ep_program(struct musb *musb, u8 epnum,
 					      packet_sz) - 1) << 11);
 			else
 				musb_writew(epio, MUSB_TXMAXP,
-					    qh->
-					    maxpacket | ((qh->hb_mult - 1) <<
-							 11));
+					    qh->maxpacket
+					    | ((qh->hb_mult ?
+					    (qh->hb_mult - 1):0) << 11));
 			musb_writeb(epio, MUSB_TXINTERVAL, qh->intv_reg);
 		} else {
 			musb_writeb(epio, MUSB_NAKLIMIT0, qh->intv_reg);
@@ -2615,11 +2615,10 @@ static int musb_urb_enqueue(struct usb_hcd *hcd, struct urb *urb,
 
 #ifdef MUSB_QMU_SUPPORT_HOST
 	if (mtk_host_qmu_concurrent && qh && qh->is_use_qmu && (ret == 0)) {
-		ret = mtk_kick_CmdQ(musb,
-				(epd->bEndpointAddress & USB_ENDPOINT_DIR_MASK)
-				? 1 : 0, qh, urb);
-		if (ret)
-			usb_hcd_unlink_urb_from_ep(hcd, urb);
+		mtk_kick_CmdQ(musb,
+			      (epd->
+			       bEndpointAddress & USB_ENDPOINT_DIR_MASK) ? 1 :
+			      0, qh, urb);
 		spin_unlock_irqrestore(&musb->lock, flags);
 		return ret;
 	}

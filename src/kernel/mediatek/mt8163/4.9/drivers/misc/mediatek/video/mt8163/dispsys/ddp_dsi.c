@@ -81,6 +81,15 @@ static int dsi_reg_op_debug;
 		}                                                              \
 	} while (0)
 
+#define DSI_CLRREGBIT(cmdq, TYPE, REG, bit, value)              \
+			do {												\
+				TYPE r; 										\
+				mt_reg_sync_writel(0xFFFFFFFF, &r);				\
+				r.bit = (value);								\
+				DISP_REG_SET(cmdq, &REG, INREG32(&r));			\
+			} while (0)
+
+
 #ifdef CONFIG_FPGA_EARLY_PORTING
 #define MIPITX_Write60384(slave_addr, write_addr, write_data)                  \
 	{                                                                      \
@@ -282,7 +291,7 @@ static void _DSI_INTERNAL_IRQ_Handler(enum DISP_MODULE_ENUM module,
 		if (status.RD_RDY) {
 			waitRDDone = true;
 			/* clear interrupt */
-			DSI_OUTREGBIT(NULL, struct DSI_INT_STATUS_REG,
+			DSI_CLRREGBIT(NULL, struct DSI_INT_STATUS_REG,
 				      DSI_REG[d]->DSI_INTSTA, RD_RDY, 0);
 			DSI_OUTREGBIT(NULL, struct DSI_RACK_REG,
 				      DSI_REG[d]->DSI_RACK, DSI_RACK, 1);
@@ -291,7 +300,7 @@ static void _DSI_INTERNAL_IRQ_Handler(enum DISP_MODULE_ENUM module,
 
 		if (status.CMD_DONE) {
 			/* clear interrupt */
-			DSI_OUTREGBIT(NULL, struct DSI_INT_STATUS_REG,
+			DSI_CLRREGBIT(NULL, struct DSI_INT_STATUS_REG,
 				      DSI_REG[d]->DSI_INTSTA, CMD_DONE, 0);
 			wake_up_interruptible(&_dsi_cmd_done_wait_queue[i]);
 #ifdef CONFIG_MTK_SEGMENT_TEST
@@ -302,7 +311,7 @@ static void _DSI_INTERNAL_IRQ_Handler(enum DISP_MODULE_ENUM module,
 		if (status.TE_RDY) {
 			DSI_OUTREG32(NULL, &txrx_ctrl,
 				     INREG32(&DSI_REG[i]->DSI_TXRX_CTRL));
-			DSI_OUTREGBIT(NULL, struct DSI_INT_STATUS_REG,
+			DSI_CLRREGBIT(NULL, struct DSI_INT_STATUS_REG,
 				      DSI_REG[i]->DSI_INTSTA, TE_RDY, 0);
 			if (txrx_ctrl.EXT_TE_EN == 1) {
 				wake_up_interruptible(&_dsi_wait_ext_te[i]);
@@ -315,19 +324,19 @@ static void _DSI_INTERNAL_IRQ_Handler(enum DISP_MODULE_ENUM module,
 		}
 
 		if (status.VM_DONE) {
-			DSI_OUTREGBIT(NULL, struct DSI_INT_STATUS_REG,
+			DSI_CLRREGBIT(NULL, struct DSI_INT_STATUS_REG,
 				      DSI_REG[i]->DSI_INTSTA, VM_DONE, 0);
 			wake_up_interruptible(&_dsi_wait_vm_done_queue[i]);
 		}
 		if (status.VM_CMD_DONE) {
 			wait_vm_cmd_done = true;
-			DSI_OUTREGBIT(NULL, struct DSI_INT_STATUS_REG,
+			DSI_CLRREGBIT(NULL, struct DSI_INT_STATUS_REG,
 				      DSI_REG[i]->DSI_INTSTA, VM_CMD_DONE, 0);
 			wake_up_interruptible(&_dsi_wait_vm_cmd_done_queue[i]);
 		}
 		if (status.SLEEPOUT_DONE) {
 			wait_sleep_out_done = true;
-			DSI_OUTREGBIT(NULL, struct DSI_INT_STATUS_REG,
+			DSI_CLRREGBIT(NULL, struct DSI_INT_STATUS_REG,
 				      DSI_REG[i]->DSI_INTSTA, SLEEPOUT_DONE, 0);
 			wake_up_interruptible(
 				&_dsi_wait_sleep_out_done_queue[i]);
@@ -4233,6 +4242,118 @@ int ddp_dsi_dump(enum DISP_MODULE_ENUM module, int level)
 	return 0;
 }
 
+int ddp_dsi_read_lcm_test_cmdq(enum DISP_MODULE_ENUM module,
+	cmdqBackupSlotHandle *read_Slot,
+	struct cmdqRecStruct *cmdq_trigger_handle,
+	struct ddp_lcm_read_cmd_table *read_table)
+{
+	int ret = 0;
+	int i = 0;
+	int dsi_i = 0;
+
+	struct DSI_T0_INS t0;
+
+	dsi_i = DSI_MODULE_to_ID(module);
+
+	if (dsi_i != 0)
+		DISPERR("[DSI]should use dsi0\n");
+
+	if (*read_Slot == 0) {
+		ret = -1;
+		DISPERR("[DSI]alloc cmdq slot fail\n");
+		return ret;
+	}
+
+	DSI_OUTREGBIT(cmdq_trigger_handle,
+		struct DSI_START_REG,
+		DSI_REG[0]->DSI_START, DSI_START, 0);
+
+	DSI_POLLREG32(cmdq_trigger_handle,
+		&DSI_REG[dsi_i]->DSI_INTSTA,
+		0x80000000, 0);
+
+	DSI_OUTREGBIT(cmdq_trigger_handle, struct DSI_MODE_CTRL_REG,
+	  DSI_REG[0]->DSI_MODE_CTRL, MODE, CMD_MODE);
+
+	DSI_POLLREG32(cmdq_trigger_handle,
+		&DSI_REG[dsi_i]->DSI_INTSTA,
+		0x80000000, 0);
+
+	/* enable dsi interrupt: RD_RDY/CMD_DONE (need do this here?) */
+	DSI_OUTREGBIT(cmdq_trigger_handle,
+		struct DSI_INT_ENABLE_REG, DSI_REG[dsi_i]->DSI_INTEN,
+			RD_RDY, 1);
+	DSI_OUTREGBIT(cmdq_trigger_handle,
+		struct DSI_INT_ENABLE_REG, DSI_REG[dsi_i]->DSI_INTEN,
+			CMD_DONE, 1);
+	DSI_OUTREGBIT(cmdq_trigger_handle,
+		struct DSI_RACK_REG, DSI_REG[dsi_i]->DSI_RACK,
+				DSI_RACK_BYPASS, 1);
+
+	for (i = 0; i < 1; i++) {
+		if (read_table->cmd[i] == 0)
+			break;
+		/* 0. send read lcm command(short packet) */
+		t0.CONFG = 0x04;	/* /BTA */
+		t0.Data0 = read_table->cmd[i];
+		/* / 0xB0 is used to distinguish DCS cmd */
+		/* or Gerneric cmd, is that Right??? */
+		t0.Data_ID = (t0.Data0 < 0xB0)
+					 ? DSI_DCS_READ_PACKET_ID
+					 : DSI_GERNERIC_READ_LONG_PACKET_ID;
+		t0.Data1 = 0;
+
+			/* write DSI CMDQ */
+		DSI_OUTREG32(cmdq_trigger_handle, &DSI_CMDQ_REG[dsi_i]->data[0],
+				    0x00013700);
+		DSI_OUTREG32(cmdq_trigger_handle, &DSI_CMDQ_REG[dsi_i]->data[1],
+				     AS_UINT32(&t0));
+		DSI_OUTREG32(cmdq_trigger_handle,
+			&DSI_REG[dsi_i]->DSI_CMDQ_SIZE, 2);
+
+		/* start DSI */
+		DSI_OUTREG32(cmdq_trigger_handle,
+			&DSI_REG[dsi_i]->DSI_START, 0);
+		DSI_OUTREG32(cmdq_trigger_handle,
+			&DSI_REG[dsi_i]->DSI_START, 1);
+
+		/* 1. wait DSI RD_RDY(must clear,*/
+		/* in case of cpu RD_RDY interrupt handler) */
+		if (dsi_i == 0) {
+			DSI_POLLREG32(cmdq_trigger_handle,
+				&DSI_REG[dsi_i]->DSI_INTSTA, 0x00000001, 0x1);
+			DSI_OUTREGBIT(cmdq_trigger_handle,
+				struct DSI_INT_STATUS_REG,
+				DSI_REG[dsi_i]->DSI_INTSTA,
+				RD_RDY, 0x00000000);
+		}
+		/* 2. save RX data */
+		if (*read_Slot && dsi_i == 0) {
+			cmdqRecBackupRegisterToSlot(cmdq_trigger_handle,
+							*read_Slot, 2*i,
+							0x14012074);
+			cmdqRecBackupRegisterToSlot(cmdq_trigger_handle,
+							*read_Slot, 2*i+1,
+							0x14012078);
+
+		}
+
+		/* 3. write RX_RACK */
+		DSI_OUTREGBIT(cmdq_trigger_handle,
+			struct DSI_RACK_REG, DSI_REG[dsi_i]->DSI_RACK,
+				    DSI_RACK, 1);
+
+		/* 4. polling not busy(no need clear) */
+		if (dsi_i == 0) {
+			DSI_POLLREG32(cmdq_trigger_handle,
+				&DSI_REG[dsi_i]->DSI_INTSTA,
+				0x80000000, 0);
+		}
+		/* loop: 0~2*/
+	}
+	return ret;
+}
+
 int ddp_dsi_build_cmdq(enum DISP_MODULE_ENUM module, void *cmdq_trigger_handle,
 		       enum CMDQ_STATE state)
 {
@@ -4242,6 +4363,7 @@ int ddp_dsi_build_cmdq(enum DISP_MODULE_ENUM module, void *cmdq_trigger_handle,
 	struct LCM_DSI_PARAMS *dsi_params = NULL;
 	struct DSI_T0_INS t0;
 	struct DSI_RX_DATA_REG read_data0;
+	struct DSI_RX_DATA_REG read_data1;
 
 	static cmdqBackupSlotHandle hSlot;
 
@@ -4391,8 +4513,12 @@ int ddp_dsi_build_cmdq(enum DISP_MODULE_ENUM module, void *cmdq_trigger_handle,
 			/* 2. save RX data */
 			if (hSlot) {
 				cmdqRecBackupRegisterToSlot(cmdq_trigger_handle,
-							    hSlot, i,
-							    0x14012074);
+								hSlot, 2*i,
+								disp_addr_convert((unsigned long)&DSI_REG[dsi_i]->DSI_RX_DATA0));
+				cmdqRecBackupRegisterToSlot(cmdq_trigger_handle,
+								hSlot, 2*i+1,
+								disp_addr_convert((unsigned long)&DSI_REG[dsi_i]->DSI_RX_DATA1));
+
 				/*
 				 * cmdqRecBackupRegisterToSlot(
 				 * cmdq_trigger_handle,
@@ -4401,6 +4527,8 @@ int ddp_dsi_build_cmdq(enum DISP_MODULE_ENUM module, void *cmdq_trigger_handle,
 			}
 
 			/* 3. write RX_RACK */
+			DSI_OUTREGBIT(cmdq_trigger_handle, struct DSI_RACK_REG,
+				      DSI_REG[dsi_i]->DSI_RACK, DSI_RACK, 0);
 			DSI_OUTREGBIT(cmdq_trigger_handle, struct DSI_RACK_REG,
 				      DSI_REG[dsi_i]->DSI_RACK, DSI_RACK, 1);
 
@@ -4426,20 +4554,22 @@ int ddp_dsi_build_cmdq(enum DISP_MODULE_ENUM module, void *cmdq_trigger_handle,
 		 * DSI_INT_ENABLE_REG,DSI_REG[dsi_i]->DSI_INTEN,RD_RDY,0);
 		 */
 	} else if (state == CMDQ_ESD_CHECK_CMP) {
-
-		DISPCHECK("[DSI]enter cmp\n");
+		unsigned char packet_type = 0x00;
+		DISPDBG("[DSI]enter cmp\n");
 		/* cmp just once and only 1 return value */
 		for (i = 0; i < 3; i++) {
 			if (dsi_params->lcm_esd_check_table[i].cmd == 0)
 				break;
 
-			DISPCHECK("[DSI]enter cmp i=%d\n", i);
+			DISPDBG("[DSI]enter cmp i=%d\n", i);
 
 			/* read data */
 			if (hSlot) {
 				/* read from slot */
-				cmdqBackupReadSlot(hSlot, i,
-						   ((uint32_t *)&read_data0));
+				cmdqBackupReadSlot(hSlot, 2*i,
+							(uint32_t *)&read_data0);
+				cmdqBackupReadSlot(hSlot, 2*i+1,
+							(uint32_t *)&read_data1);
 			} else {
 				/* read from dsi , support only one cmd read */
 				if (i == 0) {
@@ -4457,47 +4587,62 @@ int ddp_dsi_build_cmdq(enum DISP_MODULE_ENUM module, void *cmdq_trigger_handle,
 				AS_UINT32(
 					&(dsi_params->lcm_esd_check_table[i])));
 
-			DISPCHECK(
+			DISPDBG(
 				"[DSI]enter cmp read_data0 byte0=0x%x byte1=0x%x byte2=0x%x byte3=0x%x\n",
 				read_data0.byte0, read_data0.byte1,
 				read_data0.byte2, read_data0.byte3);
-			DISPCHECK(
+			DISPDBG(
 				"[DSI]cmp check_table cmd=0x%x,count=0x%x,para_list[0]=0x%x,para_list[1]=0x%x\n",
 				dsi_params->lcm_esd_check_table[i].cmd,
 				dsi_params->lcm_esd_check_table[i].count,
 				dsi_params->lcm_esd_check_table[i].para_list[0],
 				dsi_params->lcm_esd_check_table[i]
 					.para_list[1]);
-			DISPCHECK("[DSI]enter cmp DSI+0x200=0x%x\n",
+			DISPDBG("[DSI]enter cmp DSI+0x200=0x%x\n",
 				  AS_UINT32(DDP_REG_BASE_DSI0 + 0x200));
-			DISPCHECK("[DSI]enter cmp DSI+0x204=0x%x\n",
+			DISPDBG("[DSI]enter cmp DSI+0x204=0x%x\n",
 				  AS_UINT32(DDP_REG_BASE_DSI0 + 0x204));
-			DISPCHECK("[DSI]enter cmp DSI+0x60=0x%x\n",
+			DISPDBG("[DSI]enter cmp DSI+0x60=0x%x\n",
 				  AS_UINT32(DDP_REG_BASE_DSI0 + 0x60));
-			DISPCHECK("[DSI]enter cmp DSI+0x74=0x%x\n",
+			DISPDBG("[DSI]enter cmp DSI+0x74=0x%x\n",
 				  AS_UINT32(DDP_REG_BASE_DSI0 + 0x74));
-			DISPCHECK("[DSI]enter cmp DSI+0x88=0x%x\n",
+			DISPDBG("[DSI]enter cmp DSI+0x88=0x%x\n",
 				  AS_UINT32(DDP_REG_BASE_DSI0 + 0x88));
-			DISPCHECK("[DSI]enter cmp DSI+0x0c=0x%x\n",
+			DISPDBG("[DSI]enter cmp DSI+0x0c=0x%x\n",
 				  AS_UINT32(DDP_REG_BASE_DSI0 + 0x0c));
 
-			if (read_data0.byte1 ==
-			    dsi_params->lcm_esd_check_table[i].para_list[0]) {
-				/* clear rx data */
-				/*
-				 * DSI_OUTREG32(NULL,
-				 * &DSI_REG[dsi_i]->DSI_RX_DATA0,0);
-				 */
-				ret = 0; /* esd pass */
+			packet_type = read_data0.byte0;
+
+			/* long packet*/
+			if (packet_type == 0x1A || packet_type == 0x1C) {
+				if (read_data1.byte0 ==
+					dsi_params->lcm_esd_check_table[i].para_list[0]) {
+					ret = 0; /* esd pass */
+				} else {
+					ret = 1; /* esd fail */
+					break;
+				}
+
+			} else if (packet_type == 0x11 || packet_type == 0x12 ||
+						packet_type == 0x21 || packet_type == 0x22) {
+				if (read_data0.byte1 ==
+					dsi_params->lcm_esd_check_table[i].para_list[0]) {
+					ret = 0; /* esd pass */
+				} else {
+					ret = 1; /* esd fail */
+					break;
+				}
 			} else {
+				DISPCHECK("packet_type error!\n");
 				ret = 1; /* esd fail */
 				break;
 			}
+
 		}
 
 	} else if (state == CMDQ_ESD_ALLC_SLOT) {
 		/* create 3 slot */
-		cmdqBackupAllocateSlot(&hSlot, 3);
+		cmdqBackupAllocateSlot(&hSlot, 6);
 	} else if (state == CMDQ_ESD_FREE_SLOT) {
 		if (hSlot) {
 			cmdqBackupFreeSlot(hSlot);
@@ -4506,10 +4651,20 @@ int ddp_dsi_build_cmdq(enum DISP_MODULE_ENUM module, void *cmdq_trigger_handle,
 	} else if (state == CMDQ_STOP_VDO_MODE) {
 		/* use cmdq to stop dsi vdo mode */
 		/* 0. set dsi cmd mode */
+
+		i = DSI_MODULE_BEGIN(module);
+
+		DSI_OUTREGBIT(cmdq_trigger_handle,
+			struct DSI_START_REG,
+			DSI_REG[i]->DSI_START, DSI_START, 0);
+
+		DSI_POLLREG32(cmdq_trigger_handle,
+			&DSI_REG[i]->DSI_INTSTA,
+			0x80000000, 0);
+
 		DSI_SetMode(module, cmdq_trigger_handle, CMD_MODE);
 
 		/* 1. polling dsi not busy */
-		i = DSI_MODULE_BEGIN(module);
 		if (i == 0) { /* DSI0/DUAL */ /* polling vm done */
 			/*
 			 * ret = cmdqRecPoll(cmdq_trigger_handle,

@@ -22,6 +22,7 @@
 
 #ifdef CONFIG_MTK_MULTI_BAT_PROFILE_SUPPORT
 #define MTK_GET_BATTERY_ID_BY_AUXADC
+#define BATTERY_ID_CHANNEL_NUM 0
 #define ID_VOLT_END (-1)
 #endif
 
@@ -142,6 +143,7 @@ struct battery_meter_custom_data {
 
 	int std_loading_current;
 	int step_of_qmax;
+	int battery_id_channel_number;
 	int slp_current;
 	int slp_current_wifi;
 };
@@ -245,6 +247,7 @@ extern signed int battery_meter_get_charging_current(void);
 extern signed int battery_meter_get_battery_current(void);
 extern bool battery_meter_get_battery_current_sign(void);
 extern signed int battery_meter_get_car(void);
+extern signed int battery_meter_get_charge_full(void);
 extern signed int battery_meter_get_charge_counter(void);
 extern signed int battery_meter_get_battery_temperature(void);
 extern signed int battery_meter_get_charger_voltage(void);

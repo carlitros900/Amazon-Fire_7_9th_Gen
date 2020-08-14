@@ -65,4 +65,5 @@ static inline int in_exception_text(unsigned long ptr)
 	return in ? : __in_irqentry_text(ptr);
 }
 
+void dump_instr(const char *lvl, struct pt_regs *regs);
 #endif

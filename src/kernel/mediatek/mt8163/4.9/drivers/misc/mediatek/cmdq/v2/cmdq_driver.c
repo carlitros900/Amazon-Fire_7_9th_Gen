@@ -37,7 +37,7 @@
 #include <linux/suspend.h>
 #include <linux/uaccess.h>
 #ifdef CMDQ_USE_LEGACY
-#include <mt-plat/mt_boot.h>
+#include <mt-plat/mtk_boot.h>
 #endif
 #ifndef CMDQ_OF_SUPPORT
 /* mt_irq.h is not available on device tree enabled platforms */
@@ -65,6 +65,10 @@ static const struct of_device_id cmdq_of_ids[] = {
 #endif
 
 #define CMDQ_MAX_DUMP_REG_COUNT (2048)
+#define CMDQ_MAX_COMMAND_SIZE		(0x10000)
+#define CMDQ_MAX_WRITE_ADDR_COUNT	(PAGE_SIZE / sizeof(u32))
+
+
 
 static dev_t gCmdqDevNo;
 static struct cdev *gCmdqCDev;
@@ -362,8 +366,26 @@ static long cmdq_driver_create_secure_medadata(
 	struct cmdqCommandStruct *pCommand)
 {
 	void *pAddrMetadatas = NULL;
-	const uint32_t length = (pCommand->secData.addrMetadataCount) *
-				sizeof(struct cmdqSecAddrMetadataStruct);
+	uint32_t length = 0;
+
+	/* bypass 0 metadata case */
+	if (pCommand->secData.addrMetadataCount == 0) {
+		pCommand->secData.addrMetadatas =
+			(cmdqU32Ptr_t) (unsigned long)NULL;
+		return 0;
+	}
+
+
+	/* mdp max secure matadata count is 9. */
+	if (pCommand->secData.addrMetadataCount >= 10) {
+		CMDQ_ERR("invalid metadata count:%d\n",
+				 pCommand->secData.addrMetadataCount);
+		return -EFAULT;
+	}
+
+	length =
+		(pCommand->secData.addrMetadataCount)
+		* sizeof(struct cmdqSecAddrMetadataStruct);
 
 	/* verify parameter */
 	if ((false == pCommand->secData.is_secure) &&
@@ -381,12 +403,6 @@ static long cmdq_driver_create_secure_medadata(
 	pCommand->secData.addrMetadataMaxCount =
 		pCommand->secData.addrMetadataCount;
 
-	/* bypass 0 metadata case */
-	if (pCommand->secData.addrMetadataCount == 0) {
-		pCommand->secData.addrMetadatas =
-			(cmdqU32Ptr_t)(unsigned long)NULL;
-		return 0;
-	}
 
 	/* create kernel-space buffer for working */
 	pAddrMetadatas = kzalloc(length, GFP_KERNEL);
@@ -432,6 +448,11 @@ static long cmdq_driver_process_command_request(
 	int32_t status = 0;
 	uint32_t *userRegValue = NULL;
 	uint32_t userRegCount = 0;
+
+	if (pCommand->regRequest.count > CMDQ_MAX_DUMP_REG_COUNT) {
+		CMDQ_ERR("invalid regRequest.count:%d\n", pCommand->regRequest.count);
+		return -EINVAL;
+	}
 
 	if (pCommand->regRequest.count != pCommand->regValue.count) {
 		CMDQ_ERR("mismatch regRequest and regValue\n");
@@ -518,6 +539,21 @@ static long cmdq_driver_process_command_request(
 	return 0;
 }
 
+static long cmdq_verify_command(struct cmdqCommandStruct *command)
+{
+	if (command->blockSize < (2 * CMDQ_INST_SIZE) ||
+		(command->blockSize > CMDQ_MAX_COMMAND_SIZE) ||
+		command->blockSize % 8 != 0) {
+		/* for userspace command: must ends with EOC+JMP. */
+		CMDQ_ERR("Command block size invalid! size:%d\n",
+			command->blockSize);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+
 bool cmdq_driver_support_wait_and_receive_event_in_same_tick(void)
 {
 #ifdef CMDQ_USE_LEGACY
@@ -561,6 +597,18 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code,
 				   sizeof(struct cmdqCommandStruct)))
 			return -EFAULT;
 
+		if (cmdq_verify_command(&command) != 0)
+			return -EFAULT;
+
+		if (command.regRequest.count > CMDQ_MAX_DUMP_REG_COUNT ||
+			!command.blockSize ||
+			command.blockSize > CMDQ_MAX_COMMAND_SIZE) {
+			CMDQ_ERR("invalid regRequestCount:%d blockSize:%d\n",
+					command.regRequest.count,
+					command.blockSize);
+			return -EINVAL;
+		}
+
 		/* insert private_data for resource reclaim */
 		command.privateData =
 			(cmdqU32Ptr_t)(unsigned long)(pFile->private_data);
@@ -584,6 +632,15 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code,
 			(void *)param,
 			sizeof(struct cmdqJobStruct)))
 			return -EFAULT;
+
+		if (cmdq_verify_command(&(job.command)) != 0)
+			return -EFAULT;
+
+		if (job.command.blockSize > CMDQ_MAX_COMMAND_SIZE) {
+			CMDQ_ERR("invalid blockSize:%d\n",
+				job.command.blockSize);
+			return -EINVAL;
+		}
 
 		/* backup */
 		userRegCount = job.command.regRequest.count;
@@ -649,6 +706,10 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code,
 			return -EFAULT;
 		}
 		pTask = (struct TaskStruct *)(unsigned long)jobResult.hJob;
+		if (pTask->regCount > CMDQ_MAX_DUMP_REG_COUNT) {
+			CMDQ_ERR("invalid regCount:%d\n", pTask->regCount);
+			return -EINVAL;
+		}
 
 		/* utility service, fill the engine flag. */
 		/* this is required by MDP. */
@@ -745,14 +806,23 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code,
 
 			CMDQ_MSG("CMDQ_IOCTL_ALLOC_WRITE_ADDRESS\n");
 
-			if (copy_from_user(&addrReq, (void *)param,
-					   sizeof(addrReq))) {
-				CMDQ_ERR(
-					"CMDQ_IOCTL_ALLOC_WRITE_ADDRESS copy_from_user failed\n");
-				return -EFAULT;
-			}
+		if (copy_from_user(&addrReq,
+				(void *)param,
+				sizeof(addrReq))) {
+			CMDQ_ERR("ALLOC_WRITE_ADDRESS failed\n");
+			return -EFAULT;
+		}
 
-			status = cmdqCoreAllocWriteAddress(addrReq.count,
+
+		if (!addrReq.count
+		    || addrReq.count > CMDQ_MAX_WRITE_ADDR_COUNT) {
+			CMDQ_ERR(
+				"Invalid alloc write addr count:%u\n",
+				addrReq.count);
+			return -EINVAL;
+		}
+
+ 			status = cmdqCoreAllocWriteAddress(addrReq.count,
 							   &paStart);
 			if (status != 0) {
 				CMDQ_ERR(
@@ -1000,6 +1070,7 @@ static int cmdq_probe(struct platform_device *pDevice)
 	struct device *object;
 
 	CMDQ_MSG("CMDQ driver probe begin\n");
+	CMDQ_ERR("harry cmdq probe\n");
 
 	/* Function link */
 	cmdq_virtual_function_setting();
@@ -1059,12 +1130,6 @@ static int cmdq_probe(struct platform_device *pDevice)
 		return -EFAULT;
 	}
 #endif
-
-	/* global ioctl access point (/proc/mtk_cmdq) */
-	if (proc_create(CMDQ_DRIVER_DEVICE_NAME, 0644, NULL, &cmdqOP) == NULL) {
-		CMDQ_ERR("CMDQ procfs node create failed\n");
-		return -EFAULT;
-	}
 
 	/* proc debug access point */
 	cmdq_create_debug_entries();

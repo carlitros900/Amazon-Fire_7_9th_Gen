@@ -1,7 +1,7 @@
 #define AUX_CHANNEL_NUM 3
 #define AUX_IN0_NTC (0)		/* NTC6301 */
 #define AUX_IN1_NTC (1)
-#define AUX_IN2_NTC (15)
+#define AUX_IN5_NTC (15)
 
 struct mkts_bts_channel_param;
 
@@ -29,7 +29,7 @@ static struct mtkts_bts_channel_param bts_channel_param[AUX_CHANNEL_NUM] = {
 		195652, /* base on 100K NTC temp default value -40 deg */
 		1800, /* 1.8V ,pull up voltage */
 		7, /* default is //NTCG104EF104F(100K) */
-		AUX_IN2_NTC,
+		AUX_IN5_NTC,
 		0,
 		"mtkts_bts2"
 	},

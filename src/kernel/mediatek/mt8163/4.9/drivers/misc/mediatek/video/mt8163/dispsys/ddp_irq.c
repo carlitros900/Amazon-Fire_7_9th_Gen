@@ -300,7 +300,7 @@ irqreturn_t disp_irq_handler(int irq, void *dev_id)
 		reg_val = (DISP_REG_GET(dsi_reg_va + 0xC) & 0xff);
 		if (atomic_read(&ESDCheck_byCPU) == 0) {
 			reg_temp_val = reg_val & 0xfffe;
-			DISP_CPU_REG_SET(dsi_reg_va + 0xC, ~reg_temp_val);
+			DISP_CPU_REG_SET(dsi_reg_va + 0xC, (~reg_temp_val) | 0x1);
 		} else {
 			DISP_CPU_REG_SET(dsi_reg_va + 0xC, ~reg_val);
 		}

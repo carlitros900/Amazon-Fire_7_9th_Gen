@@ -350,7 +350,7 @@ struct cmdqSecAddrMetadataStruct {
 	 */
 
 	enum CMDQ_SEC_ADDR_METADATA_TYPE type; /* [IN] addr handle type */
-	uint32_t baseHandle;		  /* [IN]_h, secure address handle */
+	uint64_t baseHandle;		  /* [IN]_h, secure address handle */
 
 	/* [IN]_b, block offset from handle(PA) to current
 	 * block(plane)

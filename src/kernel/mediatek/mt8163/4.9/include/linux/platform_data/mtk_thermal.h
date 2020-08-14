@@ -93,10 +93,4 @@ struct virtual_sensor_temp_sensor {
 
 extern int thermal_level_compare(struct mtk_cooler_platform_data *cooler_data, struct cooler_sort_list *head, bool positive_seq);
 
-#ifdef CONFIG_VIRTUAL_SENSOR_THERMAL
-	void last_kmsg_thermal_shutdown(void);
-#else
-	static inline void last_kmsg_thermal_shutdown(void){};
-#endif
-
 #endif /* _MTK_THERMAL_H_ */

@@ -23,4 +23,7 @@ extern void pstore_bconsole_write(struct console *con, const char *s,
 extern struct pstore_info *psinfo;
 extern u32 scp_dump_pc(void);
 extern u32 scp_dump_lr(void);
+#ifdef CONFIG_MTK_LASTPC
+extern int get_lastpc_plt_dump(char *buf);
+#endif
 #endif

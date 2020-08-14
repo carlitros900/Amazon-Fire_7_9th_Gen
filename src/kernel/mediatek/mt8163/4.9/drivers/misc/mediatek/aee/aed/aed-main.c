@@ -417,6 +417,7 @@ static void ke_gen_process_msg(void)
 
 	strncpy(data, aed_dev.kerec.lastlog->process_path,
 			AEE_PROCESS_NAME_LENGTH);
+	data[AEE_PROCESS_NAME_LENGTH - 1] = '\0';
 	/* Count into the NUL byte at end of string */
 	rep_msg->len = strlen(data) + 1;
 }
@@ -436,6 +437,7 @@ static void ke_gen_backtrace_msg(void)
 	rep_msg->cmdId = AE_REQ_BACKTRACE;
 
 	strncpy(data, aed_dev.kerec.lastlog->backtrace, AEE_BACKTRACE_LENGTH);
+	data[AEE_BACKTRACE_LENGTH - 1] = '\0';
 	/* Count into the NUL byte at end of string */
 	rep_msg->len = strlen(data) + 1;
 }
@@ -796,6 +798,8 @@ static void ee_gen_process_msg(void)
 	} else {
 		LOGD("ee_gen_process_msg else\n");
 		n = snprintf(data, PROCESS_STRLEN, "%s", eerec->exp_filename);
+		if(n < 0)
+			strncpy(data, "unknown error", 14);
 	}
 
 	rep_msg->cmdType = AE_RSP;
@@ -892,6 +896,7 @@ static void ee_gen_coredump_msg(void)
 {
 	struct AE_Msg *rep_msg;
 	char *data;
+	int n;
 
 	LOGD("%s\n", __func__);
 
@@ -903,7 +908,9 @@ static void ee_gen_coredump_msg(void)
 	rep_msg->cmdType = AE_RSP;
 	rep_msg->cmdId = AE_REQ_COREDUMP;
 	rep_msg->arg = 0;
-	snprintf(data, 256, "/proc/aed/%s", CURRENT_EE_COREDUMP);
+	n = snprintf(data, 256, "/proc/aed/%s", CURRENT_EE_COREDUMP);
+	if(n < 0)
+		strncpy(data, "unknown error", 14);
 	rep_msg->len = strlen(data) + 1;
 }
 
@@ -1736,13 +1743,18 @@ void Log2Buffer(struct aee_oops *oops, const char *fmt, ...)
 	char buf[256];
 	int len = 0;
 	va_list ap;
+	int n = -1;
 
 	va_start(ap, fmt);
 	len = strlen(oops->userthread_maps.Userthread_maps);
 
 	if ((len + sizeof(buf)) < MaxMapsSize) {
-		vsnprintf(&oops->userthread_maps.Userthread_maps[len],
+		n = vsnprintf(&oops->userthread_maps.Userthread_maps[len],
 				sizeof(buf), fmt, ap);
+		if(n < 0) {
+			LOGD("log2Buffer error\n");
+			return;
+		}
 		oops->userthread_maps.Userthread_mapsLength = len + sizeof(buf);
 	}
 	va_end(ap);
@@ -1958,8 +1970,13 @@ static void kernel_reportAPI(const enum AE_DEFECT_ATTR attr, const int db_opt,
 			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 			tm.tm_hour, tm.tm_min, tm.tm_sec,
 			(unsigned int)tv.tv_usec);
-		snprintf(oops->backtrace + n, AEE_BACKTRACE_LENGTH - n,
+		n = snprintf(oops->backtrace + n, AEE_BACKTRACE_LENGTH - n,
 				"\nBacktrace:\n");
+		if(n < 0) {
+			LOGD("%s: snprintf fail", __func__);
+			kfree(oops);
+			return;
+		}
 		aed_get_traces(oops->backtrace);
 		oops->detail = (char *)(oops->backtrace);
 		oops->detail_len = strlen(oops->backtrace) + 1;
@@ -2019,6 +2036,7 @@ static void external_exception(const char *assert_type, const int *log,
 	struct rtc_time tm;
 	struct timeval tv = { 0 };
 	char trigger_time[60];
+	int n = 0;
 
 	LOGD("%s : [%s] log ptr %p size %d, phy ptr %p size %d\n", __func__,
 	     assert_type, log, log_size, phy, phy_size);
@@ -2052,11 +2070,13 @@ static void external_exception(const char *assert_type, const int *log,
 
 	do_gettimeofday(&tv);
 	rtc_time_to_tm(tv.tv_sec - sys_tz.tz_minuteswest * 60, &tm);
-	snprintf(trigger_time, sizeof(trigger_time),
+	n = snprintf(trigger_time, sizeof(trigger_time),
 			"Trigger time:[%d-%02d-%02d %02d:%02d:%02d.%03d]\n",
 			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 			tm.tm_hour, tm.tm_min, tm.tm_sec,
 			(unsigned int)tv.tv_usec);
+	if(n < 0)
+		strncpy(trigger_time, "unknown error", 14);
 	memset(eerec->assert_type, 0, sizeof(eerec->assert_type));
 	strncpy(eerec->assert_type, assert_type,
 			sizeof(eerec->assert_type) - 1);

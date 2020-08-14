@@ -52,7 +52,7 @@ static ssize_t hps_proc_uint_write(
 	if (copy_from_user(desc, buffer, len))
 		return 0;
 
-	desc[len] = '\0';
+	memset(desc + len, 0, sizeof(desc) - len);
 
 	if (!kstrtouint(desc, 0, &var)) {
 		if (before_write)
@@ -245,7 +245,7 @@ static ssize_t hps_num_base_proc_write(
 	if (copy_from_user(desc, buffer, len))
 		return 0;
 
-	desc[len] = '\0';
+	memset(desc + len, 0, sizeof(desc) - len);
 
 	if (hps_ctxt.is_hmp &&
 		(sscanf(desc, "%u %u", &nbl, &nbb) == 2)) {
@@ -399,7 +399,7 @@ static ssize_t hps_num_limit_proc_write(
 	if (copy_from_user(desc, buffer, len))
 		return 0;
 
-	desc[len] = '\0';
+	memset(desc + len, 0, sizeof(desc) - len);
 
 	if (hps_ctxt.is_hmp &&
 		(sscanf(desc, "%u %u", &nll, &nlb) == 2)) {

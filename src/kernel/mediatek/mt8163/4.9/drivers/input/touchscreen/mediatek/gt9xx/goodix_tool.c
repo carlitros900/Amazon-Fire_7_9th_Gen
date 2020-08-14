@@ -86,7 +86,7 @@ static void tool_set_proc_name(char *procname)
 	int i = 0, n_month = 1, n_day = 0, n_year = 0;
 	int ret = 0;
 	/* sprintf(date, "%s", __DATE__); */
-	strcpy(date, "Nov 1 2015");
+	strncpy(date, "Nov 1 2015", 10);
 	/* GTP_DEBUG("compile date: %s", date); */
 	ret = sscanf(date, "%s %d %d", month, &n_day, &n_year);
 
@@ -507,6 +507,7 @@ ssize_t goodix_tool_write(struct file *filp,
 		memset(cmd_head.data, 0, cmd_head.data_len + 1);
 		ret = copy_from_user(cmd_head.data, &buff[CMD_HEAD_LENGTH],
 		cmd_head.data_len);
+		cmd_head.data[cmd_head.data_len] = '\0';
 		if (ret) {
 			GTP_ERROR("copy_from_user failed.");
 			mutex_unlock(&rw_mutex);

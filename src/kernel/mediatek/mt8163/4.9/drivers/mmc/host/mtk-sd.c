@@ -284,6 +284,7 @@
 #define DAT_TIMEOUT         (HZ    * 10)	/* 1000ms x5 */
 #ifdef CONFIG_AMAZON_METRICS_LOG
 #define METRICS_DELAY       HZ
+#define SDCARD_HOST_NAME	"mmc1"
 #endif
 
 #define PAD_DELAY_MAX	32 /* PAD delay cells */
@@ -1052,6 +1053,10 @@ static void msdc_start_data(struct msdc_host *host, struct mmc_request *mrq,
 
 	mod_delayed_work(system_wq, &host->req_timeout, DAT_TIMEOUT);
 	host->req_count++;
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	if (!strcmp(mmc_hostname(host->mmc), SDCARD_HOST_NAME))
+		atomic64_inc(&host->mmc->data_count);
+#endif
 	dev_dbg(host->dev, "crc/total %d/%d invalcrc %d datato %d cmdto %d reqto %d total_pc %d pc_sus %d\n",
 				host->crc_count, host->req_count, host->crc_invalid_count, host->datatimeout_count,
 				host->cmdtimeout_count, host->reqtimeout_count, host->pc_count, host->pc_suspend);
@@ -1431,7 +1436,7 @@ static bool msdc_data_xfer_done(struct msdc_host *host, u32 events,
 	    (MSDC_INT_XFER_COMPL | MSDC_INT_DATCRCERR | MSDC_INT_DATTMO
 	     | MSDC_INT_DMA_BDCSERR | MSDC_INT_DMA_GPDCSERR
 	     | MSDC_INT_DMA_PROTECT);
-	u32 val;
+	u32 val = 0;
 
 	spin_lock_irqsave(&host->lock, flags);
 	done = !host->data;
@@ -1477,6 +1482,10 @@ static bool msdc_data_xfer_done(struct msdc_host *host, u32 events,
 				}
 				data->error = -ETIMEDOUT;
 				host->datatimeout_count++;
+#ifdef CONFIG_AMAZON_METRICS_LOG
+				if (!strcmp(mmc_hostname(host->mmc), SDCARD_HOST_NAME))
+					atomic64_inc(&host->mmc->data_timeout_count);
+#endif
 			}
 			else if (events & MSDC_INT_DATCRCERR) {
 				data->error = -EILSEQ;
@@ -2471,7 +2480,11 @@ static int msdc_drv_probe(struct platform_device *pdev)
 	if (host->dev_comp->support_64g)
 		host->dma_mask = DMA_BIT_MASK(36);
 	else
+#if (defined CONFIG_MTEE_CMA_SECURE_MEMORY) && (defined CONFIG_ARM)
+		host->dma_mask = DMA_BIT_MASK(29);
+#else
 		host->dma_mask = DMA_BIT_MASK(32);
+#endif
 	mmc_dev(mmc)->dma_mask = &host->dma_mask;
 
 	host->timeout_clks = 3 * 1048576;

@@ -313,6 +313,7 @@ static unsigned int _mt_gpufreq_get_dvfs_table_type(void)
 		break;
 	case 0x7:
 		type = 3;
+		break;
 	default:
 		type = GPU_DEFAULT_TYPE;
 		break;

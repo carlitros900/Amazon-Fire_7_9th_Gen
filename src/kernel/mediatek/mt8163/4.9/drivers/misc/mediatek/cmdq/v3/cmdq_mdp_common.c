@@ -15,6 +15,7 @@
 #include "cmdq_device.h"
 #include "cmdq_record.h"
 #include "cmdq_reg.h"
+#include "cmdq_sec.h"
 #ifdef CMDQ_PROFILE_MMP
 #include "cmdq_mmp.h"
 #endif
@@ -31,7 +32,9 @@
 #include <linux/pm_qos.h>
 #include <linux/math64.h>
 #include "cmdq_mdp_pmqos.h"
+#ifdef CONFIG_MTK_SMI_EXT
 #include <mmdvfs_pmqos.h>
+#endif
 
 #include "cmdq_helper_ext.h"
 
@@ -44,8 +47,10 @@ static struct pm_qos_request mdp_bw_qos_request[MDP_TOTAL_THREAD];
 static struct pm_qos_request mdp_clk_qos_request[MDP_TOTAL_THREAD];
 static struct pm_qos_request isp_bw_qos_request[MDP_TOTAL_THREAD];
 static struct pm_qos_request isp_clk_qos_request[MDP_TOTAL_THREAD];
+#ifdef CONFIG_MTK_SMI_EXT
 static u64 g_freq_steps[MAX_FREQ_STEP];
 static u32 step_size;
+#endif
 
 #define CMDQ_LOG_PMQOS(string, args...) \
 do {			\
@@ -617,10 +622,18 @@ void cmdq_mdp_unlock_thread(struct cmdqRecStruct *handle)
 	/* get not use engine using engine flag for disable clock. */
 	handle->engine_clk = cmdq_mdp_get_not_used_engine(engine_flag);
 
+	if (!mdp_ctx.thread[thread].task_count)
+		CMDQ_ERR(
+			"count fatal error thread:%u count:%u allow:%s acquire:%s\n",
+			thread, mdp_ctx.thread[thread].task_count,
+			mdp_ctx.thread[thread].allow_dispatch ?
+			"true" : "false",
+			mdp_ctx.thread[thread].acquired ? "true" : "false");
 	mdp_ctx.thread[thread].task_count--;
 
 	/* if no task on thread, release to cmdq core */
-	if (!mdp_ctx.thread[thread].task_count) {
+	/* no need to release thread since secure path use static thread */
+	if (!mdp_ctx.thread[thread].task_count && !handle->secData.is_secure) {
 		cmdq_core_release_thread(handle->scenario, thread);
 		mdp_ctx.thread[thread].acquired = false;
 	}
@@ -651,20 +664,16 @@ static void cmdq_mdp_handle_unprepare(struct cmdqRecStruct *handle)
 	/* only handle if this handle run by mdp flush and thread
 	 * unlock thread usage when cmdq ending this handle
 	 */
-	if (mdp_ctx.thread[handle->thread].acquired)
-		cmdq_mdp_unlock_thread(handle);
+	cmdq_mdp_unlock_thread(handle);
 }
 
 #ifdef CMDQ_SECURE_PATH_SUPPORT
-static s32 cmdq_mdp_check_engine_waiting(struct cmdqRecStruct *handle)
+static s32 cmdq_mdp_check_engine_waiting_unlock(struct cmdqRecStruct *handle)
 {
 	struct cmdqRecStruct *entry;
 	const u64 engine_flag = handle->engineFlag;
-	struct cmdqRecStruct *waiting_handle;
-	bool is_secure;
-
-	/* operation for tasks_wait list need task mutex */
-	mutex_lock(&mdp_task_mutex);
+	struct cmdqRecStruct *waiting_handle = NULL;
+	bool is_secure = false;
 
 	list_for_each_entry(entry, &mdp_ctx.tasks_wait, list_entry) {
 		if (engine_flag & entry->engineFlag) {
@@ -673,7 +682,6 @@ static s32 cmdq_mdp_check_engine_waiting(struct cmdqRecStruct *handle)
 			break;
 		}
 	}
-	mutex_unlock(&mdp_task_mutex);
 
 	/* same engine does not exist in waiting list */
 	if (!waiting_handle)
@@ -750,10 +758,12 @@ static s32 cmdq_mdp_find_free_thread(struct cmdqRecStruct *handle)
 	const u32 max_thd = cmdq_dev_get_thread_count();
 
 #ifdef CMDQ_SECURE_PATH_SUPPORT
-	if (cmdq_mdp_check_engine_waiting(handle) < 0)
+	if (cmdq_mdp_check_engine_waiting_unlock(handle) < 0)
 		return CMDQ_INVALID_THREAD;
-#endif
 
+	if (handle->secData.is_secure)
+		return handle->ctrl->get_thread_id(handle->scenario);
+#endif
 	conflict = cmdq_mdp_check_engine_conflict(handle, &thread);
 	if (conflict) {
 		CMDQ_LOG(
@@ -796,10 +806,9 @@ static s32 cmdq_mdp_find_free_thread(struct cmdqRecStruct *handle)
 			/* for engine flag empty, assign acquired thread */
 			for (index = CMDQ_DYNAMIC_THREAD_ID_START;
 				index < max_thd; index++) {
-				if (!threads[index].acquired) {
-					thread = index;
-					break;
-				}
+				if (!threads[index].acquired)
+					continue;
+				thread = index;
 			}
 		}
 		CMDQ_MSG("acquire thread:%d\n", thread);
@@ -945,18 +954,60 @@ static void cmdq_mdp_store_debug(struct cmdqCommandStruct *desc,
 	CMDQ_MSG("user debug string:%s\n", handle->user_debug_str);
 }
 
+static s32 cmdq_mdp_setup_sec(struct cmdqCommandStruct *desc,
+	struct cmdqRecStruct *handle)
+{
+	if (!desc->secData.is_secure)
+		return 0;
+
+	cmdq_task_set_secure(handle, desc->secData.is_secure);
+	handle->secData.enginesNeedDAPC = desc->secData.enginesNeedDAPC;
+	handle->secData.enginesNeedPortSecurity =
+		desc->secData.enginesNeedPortSecurity;
+	handle->secData.addrMetadataCount = desc->secData.addrMetadataCount;
+
+	if (handle->secData.addrMetadataCount > 0) {
+		u32 metadata_length;
+		void *p_metadatas;
+
+		metadata_length = (handle->secData.addrMetadataCount) *
+			sizeof(struct cmdqSecAddrMetadataStruct);
+		/* create sec data task buffer for working */
+		p_metadatas = kzalloc(metadata_length, GFP_KERNEL);
+		if (p_metadatas) {
+			memcpy(p_metadatas, CMDQ_U32_PTR(
+				desc->secData.addrMetadatas), metadata_length);
+			handle->secData.addrMetadatas =
+				(cmdqU32Ptr_t)(unsigned long)p_metadatas;
+		} else {
+			CMDQ_AEE("CMDQ",
+				"Can't alloc secData buffer count:%d alloacted_size:%d\n",
+				 handle->secData.addrMetadataCount,
+				 metadata_length);
+			return -ENOMEM;
+		}
+	} else {
+		handle->secData.addrMetadatas = 0;
+	}
+
+	return 0;
+}
+
 s32 cmdq_mdp_flush_async(struct cmdqCommandStruct *desc, bool user_space,
 	struct cmdqRecStruct **handle_out)
 {
 	struct cmdqRecStruct *handle;
 	struct task_private *private;
 	s32 err;
+	u32 copy_size;
 
 	CMDQ_SYSTRACE_BEGIN("%s\n", __func__);
 
 	cmdq_task_create(desc->scenario, &handle);
 
-	/* TODO: set secure data */
+	/* set secure data */
+	handle->secStatus = NULL;
+	cmdq_mdp_setup_sec(desc, handle);
 
 	handle->engineFlag = desc->engineFlag;
 	handle->pkt->priority = desc->priority;
@@ -977,23 +1028,21 @@ s32 cmdq_mdp_flush_async(struct cmdqCommandStruct *desc, bool user_space,
 		handle->prop_size = 0;
 	}
 
-	if (desc->regRequest.count &&
-		desc->regRequest.count <= CMDQ_MAX_DUMP_REG_COUNT &&
-		desc->regRequest.regAddresses) {
-		u32 copy_size = desc->blockSize - 2 * CMDQ_INST_SIZE;
-
-		/* no need append other instruction, copy all */
-		if (copy_size > 0) {
-			err = cmdq_mdp_copy_cmd_to_task(handle,
-				(void *)(unsigned long)desc->pVABase,
-				copy_size, user_space);
-			if (err < 0) {
-				cmdq_task_destroy(handle);
-				CMDQ_SYSTRACE_END();
-				return err;
-			}
+	copy_size = desc->blockSize - 2 * CMDQ_INST_SIZE;
+	if (copy_size > 0) {
+		err = cmdq_mdp_copy_cmd_to_task(handle,
+			(void *)(unsigned long)desc->pVABase,
+			copy_size, user_space);
+		if (err < 0) {
+			cmdq_task_destroy(handle);
+			CMDQ_SYSTRACE_END();
+			return err;
 		}
+	}
 
+	if (desc->regRequest.count &&
+			desc->regRequest.count <= CMDQ_MAX_DUMP_REG_COUNT &&
+			desc->regRequest.regAddresses) {
 		err = cmdq_task_append_backup_reg(handle,
 			desc->regRequest.count,
 			(u32 *)(unsigned long)desc->regRequest.regAddresses);
@@ -1002,25 +1051,22 @@ s32 cmdq_mdp_flush_async(struct cmdqCommandStruct *desc, bool user_space,
 			CMDQ_SYSTRACE_END();
 			return err;
 		}
+	}
 
-		err = cmdq_mdp_copy_cmd_to_task(handle,
-			(void *)(unsigned long)desc->pVABase + copy_size,
-			2 * CMDQ_INST_SIZE, user_space);
-		if (err < 0) {
-			cmdq_task_destroy(handle);
-			CMDQ_SYSTRACE_END();
-			return err;
-		}
-	} else {
-		/* no need append other instruction, copy all */
-		err = cmdq_mdp_copy_cmd_to_task(handle,
-			(void *)(unsigned long)desc->pVABase,
-			desc->blockSize, user_space);
-		if (err < 0) {
-			cmdq_task_destroy(handle);
-			CMDQ_SYSTRACE_END();
-			return err;
-		}
+#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+	if (handle->secData.is_secure) {
+		/* insert backup cookie cmd */
+		cmdq_sec_insert_backup_cookie_instr(handle, handle->thread);
+	}
+#endif
+
+	err = cmdq_mdp_copy_cmd_to_task(handle,
+		(void *)(unsigned long)desc->pVABase + copy_size,
+		2 * CMDQ_INST_SIZE, user_space);
+	if (err < 0) {
+		cmdq_task_destroy(handle);
+		CMDQ_SYSTRACE_END();
+		return err;
 	}
 
 	/* mark finalized since we copy it */
@@ -1198,7 +1244,7 @@ void cmdq_mdp_resume(void)
 
 void cmdq_mdp_release_task_by_file_node(void *file_node)
 {
-	struct cmdqRecStruct *handle;
+	struct cmdqRecStruct *handle, *temp;
 
 	/* Since the file node is closed, there is no way
 	 * user space can issue further "wait_and_close" request,
@@ -1209,7 +1255,8 @@ void cmdq_mdp_release_task_by_file_node(void *file_node)
 	/* walk through active and waiting lists and release them */
 	mutex_lock(&mdp_task_mutex);
 
-	list_for_each_entry(handle, &mdp_ctx.tasks_wait, list_entry) {
+	list_for_each_entry_safe(handle, temp, &mdp_ctx.tasks_wait,
+		list_entry) {
 		if (!(handle->state != TASK_STATE_IDLE &&
 			handle->node_private == file_node &&
 			cmdq_mdp_is_request_from_user_space(
@@ -1296,6 +1343,7 @@ int cmdq_mdp_status_dump(struct notifier_block *nb,
 
 static void cmdq_mdp_init_pmqos(void)
 {
+#ifdef CONFIG_MTK_SMI_EXT
 	s32 i = 0;
 	s32 result = 0;
 	/* INIT_LIST_HEAD(&gCmdqMdpContext.mdp_tasks);*/
@@ -1321,10 +1369,12 @@ static void cmdq_mdp_init_pmqos(void)
 	/* Call mmdvfs_qos_get_freq_steps to get supported frequency */
 	result = mmdvfs_qos_get_freq_steps(PM_QOS_MDP_FREQ, &g_freq_steps[0],
 			&step_size);
+
 	if (g_freq_steps[0] == 0)
 		g_freq_steps[0] = 457;
 	if (result < 0)
 		CMDQ_ERR("get MMDVFS freq steps failed, result: %d\n", result);
+#endif
 }
 
 void cmdq_mdp_init(void)
@@ -1734,6 +1784,7 @@ void cmdq_mdp_unmap_mmsys_VA(void)
 static void cmdq_mdp_isp_begin_task_virtual(struct cmdqRecStruct *handle,
 	struct cmdqRecStruct **handle_list, u32 size)
 {
+#ifdef CONFIG_MTK_SMI_EXT
 	struct mdp_pmqos *isp_curr_pmqos;
 	struct mdp_pmqos_record *pmqos_curr_record;
 	struct timeval curr_time;
@@ -1795,11 +1846,13 @@ static void cmdq_mdp_isp_begin_task_virtual(struct cmdqRecStruct *handle,
 	pm_qos_update_request(&isp_bw_qos_request[thread_id], curr_bandwidth);
 	/*update clock*/
 	pm_qos_update_request(&isp_clk_qos_request[thread_id], max_throughput);
+#endif
 }
 
 static void cmdq_mdp_begin_task_virtual(struct cmdqRecStruct *handle,
 	struct cmdqRecStruct **handle_list, u32 size)
 {
+#ifdef CONFIG_MTK_SMI_EXT
 	struct mdp_pmqos *mdp_curr_pmqos;
 	struct mdp_pmqos *mdp_list_pmqos;
 	struct mdp_pmqos_record *pmqos_curr_record;
@@ -1817,6 +1870,9 @@ static void cmdq_mdp_begin_task_virtual(struct cmdqRecStruct *handle,
 	u32 mdp_data_size = 0;
 	u32 mdp_curr_pixel_size = 0;
 	bool first_task = true;
+
+	/* check engine status */
+	cmdq_mdp_get_func()->CheckHwStatus(handle);
 
 	pmqos_curr_record =
 		kzalloc(sizeof(struct mdp_pmqos_record), GFP_KERNEL);
@@ -1986,11 +2042,13 @@ static void cmdq_mdp_begin_task_virtual(struct cmdqRecStruct *handle,
 #if IS_ENABLED(CONFIG_MTK_SMI_EXT) && IS_ENABLED(CONFIG_MACH_MT6771)
 	smi_larb_mon_act_cnt();
 #endif
+#endif
 }
 
 static void cmdq_mdp_isp_end_task_virtual(struct cmdqRecStruct *handle,
 	struct cmdqRecStruct **handle_list, u32 size)
 {
+#ifdef CONFIG_MTK_SMI_EXT
 	struct mdp_pmqos *isp_curr_pmqos;
 	u32 thread_id = handle->thread - CMDQ_DYNAMIC_THREAD_ID_START;
 
@@ -2013,11 +2071,13 @@ static void cmdq_mdp_isp_end_task_virtual(struct cmdqRecStruct *handle,
 	/*update clock*/
 	if (isp_curr_pmqos->isp_total_pixel)
 		pm_qos_update_request(&isp_clk_qos_request[thread_id], 0);
+#endif
 }
 
 static void cmdq_mdp_end_task_virtual(struct cmdqRecStruct *handle,
 	struct cmdqRecStruct **handle_list, u32 size)
 {
+#ifdef CONFIG_MTK_SMI_EXT
 	struct mdp_pmqos *mdp_curr_pmqos;
 	struct mdp_pmqos *mdp_list_pmqos;
 	struct mdp_pmqos_record *pmqos_curr_record;
@@ -2245,6 +2305,12 @@ static void cmdq_mdp_end_task_virtual(struct cmdqRecStruct *handle,
 	if (mdp_curr_pmqos->mdp_total_pixel)
 		pm_qos_update_request(&mdp_clk_qos_request[thread_id],
 		max_throughput);
+#endif
+}
+
+static void cmdq_mdp_check_hw_status_virtual(struct cmdqRecStruct *handle)
+{
+	/* Do nothing */
 }
 
 void cmdq_mdp_virtual_function_setting(void)
@@ -2296,6 +2362,7 @@ void cmdq_mdp_virtual_function_setting(void)
 	pFunc->endTask = cmdq_mdp_end_task_virtual;
 	pFunc->beginISPTask = cmdq_mdp_isp_begin_task_virtual;
 	pFunc->endISPTask = cmdq_mdp_isp_end_task_virtual;
+	pFunc->CheckHwStatus = cmdq_mdp_check_hw_status_virtual;
 }
 
 struct cmdqMDPFuncStruct *cmdq_mdp_get_func(void)

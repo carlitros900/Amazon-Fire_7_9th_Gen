@@ -232,7 +232,7 @@ unsigned int GetPLaybackSramPartial(void)
 	if (Sramsize + AudioSramCapturePartialSize > AFE_INTERNAL_SRAM_SIZE)
 		Sramsize = AFE_INTERNAL_SRAM_SIZE - AudioSramCapturePartialSize;
 #else
-	if (Sramsize > AFE_INTERNAL_SRAM_SIZE)
+	if (Sramsize >= AFE_INTERNAL_SRAM_SIZE)
 		Sramsize = AFE_INTERNAL_SRAM_SIZE;
 #endif
 	return Sramsize;
@@ -247,7 +247,7 @@ size_t GetCaptureSramSize(void)
 {
 	unsigned int Sramsize = AudioSramCaptureSize;
 
-	if (Sramsize > AFE_INTERNAL_SRAM_SIZE)
+	if (Sramsize >= AFE_INTERNAL_SRAM_SIZE)
 		Sramsize = AFE_INTERNAL_SRAM_SIZE;
 	return Sramsize;
 }
@@ -1505,8 +1505,8 @@ bool EnableSideGenHw(uint32 connection, bool direction, bool Enable)
 			break;
 		case Soc_Aud_InterConnectionInput_I21:
 		case Soc_Aud_InterConnectionInput_I22:
-			break;
 			Afe_Set_Reg(AFE_SGEN_CON0, 0xc46C2662, 0xffffffff);
+			break;
 		default:
 			break;
 		}
@@ -1638,6 +1638,15 @@ bool CleanPreDistortion(void)
 	return true;
 }
 
+#ifdef CONFIG_AMP_AW8737S
+static bool isUsingExtSpeaker = false;
+void setUsingExtSpeaker(bool bSpeaker)
+{
+	isUsingExtSpeaker = bSpeaker;
+	pr_debug("%s, bSpeaker = %d\n", __func__, bSpeaker);
+}
+#endif
+
 bool SetDLSrc2(uint32 SampleRate)
 {
 	uint32 AfeAddaDLSrc2Con0, AfeAddaDLSrc2Con1;
@@ -1675,7 +1684,17 @@ bool SetDLSrc2(uint32 SampleRate)
 	/* SA suggest apply -0.3db to audio/speech path */
 	/* for voice mode degrade 0.3db */
 	AfeAddaDLSrc2Con0 = AfeAddaDLSrc2Con0 | (0x01 << 1);
+#ifdef CONFIG_AMP_AW8737S
+	if (isUsingExtSpeaker) {
+		AfeAddaDLSrc2Con1 = 0x4F5C0000;   /* -10DB */
+		pr_debug("SetDLSrc2 set Speaker true");
+	} else {
+		AfeAddaDLSrc2Con1 = 0xf74f0000;   /* -0.3DB */
+		pr_debug("SetDLSrc2 set Speaker false");
+	}
+#else
 	AfeAddaDLSrc2Con1 = 0xf74f0000;
+#endif
 	Afe_Set_Reg(AFE_ADDA_DL_SRC2_CON0, AfeAddaDLSrc2Con0, MASK_ALL);
 	Afe_Set_Reg(AFE_ADDA_DL_SRC2_CON1, AfeAddaDLSrc2Con1, MASK_ALL);
 	return true;
@@ -2919,10 +2938,13 @@ int AudDrv_Allocate_mem_Buffer(struct device *pDev,
 			}
 			break;
 		}
+		break;
 	case Soc_Aud_Digital_Block_MEM_I2S:
 		pr_warn("currently not support\n");
+		break;
 	default:
 		pr_warn("%s not support\n", __func__);
+		break;
 	}
 	return true;
 }

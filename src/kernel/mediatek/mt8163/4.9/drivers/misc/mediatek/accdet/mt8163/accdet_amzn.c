@@ -60,7 +60,7 @@ static int accdet_irq;
 /* GPIO pin connected to headset */
 static int gpiopin = -1;
 /* Global status of initialization. By default false */
-static bool irq_initialized;
+static bool initialized;
 /* Interrupt type*/
 unsigned int accdet_eint_type;
 /* h2w switch */
@@ -188,9 +188,9 @@ static irqreturn_t accdet_irq_callback(int irq, void *data)
 {
 	int ret = 0;
 
-	if (gpiopin < 0 || irq_initialized == false) {
+	if (gpiopin < 0 || initialized == false) {
 		ACCDET_ERROR("[accdet]%s Cannot proceed! gpiopin=%d init=%d\n",
-			__func__, gpiopin, irq_initialized);
+			__func__, gpiopin, initialized);
 		return IRQ_HANDLED;
 	}
 
@@ -293,14 +293,6 @@ static inline int accdet_setup_eint(struct platform_device *accdet_device)
 		gpio_set_debounce(gpiopin, accdet_dts_data.eint_debounce);
 
 		accdet_irq = irq_of_parse_and_map(node, 0);
-
-		/* Work thread of gpio interrupts */
-		accdet_eint_wq = create_singlethread_workqueue("accdet_eint");
-		INIT_WORK(&accdet_eint_work, accdet_eint_work_callback);
-
-		irq_initialized = true;
-
-		/* Enable interrupt after initializing work queue */
 		ret = request_irq(accdet_irq, accdet_irq_callback,
 			IRQF_TRIGGER_NONE, "accdet-eint", NULL);
 		if (ret != 0) {
@@ -460,6 +452,11 @@ int mt_accdet_probe(struct platform_device *dev)
 			ret);
 		goto clean_kpd;
 	}
+	/* Work thread of gpio interrupts */
+	accdet_eint_wq = create_singlethread_workqueue("accdet_eint");
+	INIT_WORK(&accdet_eint_work, accdet_eint_work_callback);
+
+	initialized = true;
 
 	accdet_report_status();
 
@@ -488,7 +485,7 @@ void mt_accdet_remove(void)
 {
 	ACCDET_DEBUG("[accdet]%s+\n", __func__);
 
-	irq_initialized = false;
+	initialized = false;
 	destroy_workqueue(accdet_eint_wq);
 	switch_dev_unregister(&accdet_data);
 	device_del(accdet_nor_device);

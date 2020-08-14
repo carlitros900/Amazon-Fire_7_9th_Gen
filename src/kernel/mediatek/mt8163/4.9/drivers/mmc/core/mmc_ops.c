@@ -842,6 +842,7 @@ static int mmc_movi_read_cmd(struct mmc_card *card, u8 *buffer)
 	brq.data = &wdata;
 	brq.stop = NULL;
 	brq.sbc = NULL;
+	brq.cap_cmd_during_tfr = false;
 
 	wcmd.opcode = MMC_READ_SINGLE_BLOCK;
 	wcmd.arg = 0;

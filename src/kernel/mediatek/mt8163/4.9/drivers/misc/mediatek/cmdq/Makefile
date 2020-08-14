@@ -11,16 +11,9 @@
 # GNU General Public License for more details.
 #
 
-$(warning harry MTK_PLATFORM is $(MTK_PLATFORM) filter $(filter $(MTK_PLATFORM), mt8163))
 # common driver code for CMDQ
 ifeq ($(CONFIG_MTK_CMDQ_TAB), y)
-  ifneq (,$(filter $(MTK_PLATFORM), mt8163))
-    $(warning harry build cmdq hv1)
-    obj-y += hv1/
-  else
-    $(warning harry build cmdq v2)
-    obj-y += v2/
-  endif
+  obj-y += v2/
 else
   # use common driver
   obj-y += v3/

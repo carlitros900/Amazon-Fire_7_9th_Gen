@@ -157,3 +157,9 @@ config MTK_DRE30_SUPPORT
 	  display visual enhancement ver.3.
 	  This feature requires the cowork of AAL user-space algorithm process.
 	  Please also turn on MTK_AAL_SUPPORT amd MTK_DRE30_SUPPORT in ProjectConfig.mk.
+
+config LCM_SEND_CMD_IN_VIDEO
+	bool "lcm send cmd in video"
+	default n
+	help
+	  lcm send cmd in video

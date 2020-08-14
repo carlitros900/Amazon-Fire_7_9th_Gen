@@ -221,3 +221,7 @@ config MTK_AUDIO_USE_SHARED_SRAM
 	default n
 	help
 	  Say Y if you want to split the sram for playback (18K) and capture (18K).
+
+config AMP_AW8737S
+	bool "Using amplifier AW8737S"
+	default n

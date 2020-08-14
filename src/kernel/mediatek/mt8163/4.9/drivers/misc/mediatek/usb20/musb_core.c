@@ -420,6 +420,12 @@ void musb_write_fifo(struct musb_hw_ep *hw_ep, u16 len, const u8 *src)
 
 	DBG(4, "%cX ep%d fifo %p count %d buf %p\n", 'T', hw_ep->epnum, fifo,
 	    len, src);
+	if (!fifo) {
+		DBG(0, "%cX ep%d fifo %p count %d buf %p\n", 'T',
+		    hw_ep->epnum, fifo, len, src);
+		dump_stack();
+		return;
+	}
 
 	/* we can't assume unaligned reads work */
 	if (likely((0x01 & (unsigned long)src) == 0)) {
@@ -1279,6 +1285,9 @@ void musb_start(struct musb *musb)
 			musb->intrrxe = 0xfffe;
 			musb_writew(regs, MUSB_INTRRXE, musb->intrrxe);
 			musb_writeb(regs, MUSB_INTRUSBE, 0xf7);
+#ifdef CONFIG_DUAL_ROLE_USB_INTF
+			mt_usb_dual_role_changed(musb);
+#endif
 			return;
 		}
 	}
@@ -1351,6 +1360,10 @@ void musb_start(struct musb *musb)
 	}
 
 	musb->is_active = 1;
+
+#ifdef CONFIG_DUAL_ROLE_USB_INTF
+	mt_usb_dual_role_changed(musb);
+#endif
 }
 
 void musb_generic_disable(struct musb *musb)
@@ -1429,6 +1442,10 @@ void musb_stop(struct musb *musb)
 	 *  - ...
 	 */
 	musb_platform_try_idle(musb, 0);
+
+#ifdef CONFIG_DUAL_ROLE_USB_INTF
+	mt_usb_dual_role_changed(musb);
+#endif
 }
 
 static void musb_shutdown(struct platform_device *pdev)
@@ -2427,6 +2444,11 @@ static int musb_init_controller(struct device *dev, int nIrq,
 	hcd->self.otg_port = 1;
 	musb->xceiv->otg->host = &hcd->self;
 	hcd->power_budget = 2 * (plat->power ? : 250);
+	hcd->self.uses_pio_for_control = 1;
+
+	status = usb_add_hcd(hcd, 0, 0);
+	if (status < 0)
+		goto fail3;
 
 	/* program PHY to use external vBus if required */
 	if (plat->extvbus) {
@@ -2445,6 +2467,13 @@ static int musb_init_controller(struct device *dev, int nIrq,
 #endif
 
 	status = musb_gadget_setup(musb);
+
+	/* only enable on iddig mode */
+#ifndef CONFIG_MTK_USB_TYPEC
+#ifdef CONFIG_DUAL_ROLE_USB_INTF
+	mt_usb_dual_role_init(musb);
+#endif
+#endif
 
 	/*initial done, turn off usb */
 	musb_platform_disable(musb);

@@ -26,6 +26,8 @@
 #include <mt-plat/aee.h>
 #endif
 
+/* #define CMDQ_TIMER_ENABLE */
+
 #define CMDQ_EVENT_ENUM cmdq_event
 
 #define CMDQ_PHYS_TO_AREG(addr) ((addr) & 0xFFFFFFFF) /* truncate directly */
@@ -69,7 +71,7 @@ struct DumpFirstErrorStruct {
 	pid_t callerPid;
 	char callerName[TASK_COMM_LEN];
 	unsigned long long savetime;	/* epoch time of first error occur */
-	char cmdqString[CMDQ_MAX_FIRSTERROR];
+	char *cmdqString;
 	u32 cmdqCount;
 	s32 cmdqMaxSize;
 	bool flag;
@@ -315,33 +317,6 @@ struct CmdqDebugCBkStruct {
 typedef void (*cmdq_core_handle_cb)(struct cmdqRecStruct *handle);
 
 #define subsys_lsb_bit (16)
-enum CMDQ_CONDITION_ENUM {
-	CMDQ_CONDITION_ERROR = -1,
-
-	/* these are actual HW op code */
-	CMDQ_EQUAL = 0,
-	CMDQ_NOT_EQUAL = 1,
-	CMDQ_GREATER_THAN_AND_EQUAL = 2,
-	CMDQ_LESS_THAN_AND_EQUAL = 3,
-	CMDQ_GREATER_THAN = 4,
-	CMDQ_LESS_THAN = 5,
-
-	CMDQ_CONDITION_MAX,
-};
-
-enum CMDQ_LOGIC_ENUM {
-	/* these are actual HW sOP code */
-	CMDQ_LOGIC_ASSIGN = 0,
-	CMDQ_LOGIC_ADD = 1,
-	CMDQ_LOGIC_SUBTRACT = 2,
-	CMDQ_LOGIC_MULTIPLY = 3,
-	CMDQ_LOGIC_XOR = 8,
-	CMDQ_LOGIC_NOT = 9,
-	CMDQ_LOGIC_OR = 10,
-	CMDQ_LOGIC_AND = 11,
-	CMDQ_LOGIC_LEFT_SHIFT = 12,
-	CMDQ_LOGIC_RIGHT_SHIFT = 13
-};
 
 enum CMDQ_LOG_LEVEL_ENUM {
 	CMDQ_LOG_LEVEL_NORMAL = 0,
@@ -582,6 +557,15 @@ struct SRAMChunk {
 	char owner[CMDQ_MAX_SRAM_OWNER_NAME];
 };
 
+/**
+ * shared memory between normal and secure world
+ */
+struct cmdqSecSharedMemoryStruct {
+	void *pVABase;		/* virtual address of command buffer */
+	dma_addr_t MVABase;	/* physical address of command buffer */
+	uint32_t size;		/* buffer size */
+};
+
 struct ContextStruct {
 	/* handle information */
 	struct list_head handle_active;
@@ -664,6 +648,11 @@ enum cmdq_thread_dispatch {
 	CMDQ_THREAD_DYNAMIC,
 };
 
+enum CMDQ_SPM_MODE {
+	CMDQ_CG_MODE,
+	CMDQ_PD_MODE,
+};
+
 struct cmdqRecStruct {
 	struct list_head list_entry;
 	struct cmdq_pkt *pkt;
@@ -674,7 +663,6 @@ struct cmdqRecStruct {
 	void *running_task;
 	bool jump_replace;	/* jump replace or not */
 	bool finalized;		/* set to true after flush() or startLoop() */
-	bool loop;
 	CmdqInterruptCB loop_cb;
 	unsigned long loop_user_data;
 	CmdqAsyncFlushCB async_callback;
@@ -741,6 +729,8 @@ struct cmdqRecStruct {
 	CMDQ_TIME beginWait;
 	CMDQ_TIME gotIRQ;
 	CMDQ_TIME wakedUp;
+	CMDQ_TIME entrySec;	/* time stamp of entry secure world */
+	CMDQ_TIME exitSec;	/* time stamp of exit secure world */
 	u32 durAlloc;	/* allocae time duration */
 	u32 durReclaim;	/* allocae time duration */
 	u32 durRelease;	/* release time duration */
@@ -748,6 +738,10 @@ struct cmdqRecStruct {
 	/* PMQoS information */
 	void *prop_addr;
 	u32 prop_size;
+
+	/* secure world */
+	struct iwcCmdqSecStatus_t *secStatus;
+	u32 irq;
 };
 
 /* TODO: add controller support */
@@ -759,6 +753,7 @@ struct cmdq_controller {
 		struct TaskStruct *task);
 #endif
 	s32 (*get_thread_id)(s32 scenario);
+	s32 (*handle_wait_result)(struct cmdqRecStruct *handle, s32 thread);
 #if 0
 	s32 (*execute_prepare)(struct TaskStruct *task, s32 thread);
 	s32 (*execute)(struct TaskStruct *task, s32 thread);
@@ -850,6 +845,8 @@ void *cmdq_core_alloc_hw_buffer(struct device *dev,
 	size_t size, dma_addr_t *dma_handle, const gfp_t flag);
 void cmdq_core_free_hw_buffer(struct device *dev, size_t size,
 	void *cpu_addr, dma_addr_t dma_handle);
+s32 cmdq_core_alloc_pool_buf(struct cmdq_pkt_buffer *buf);
+s32 cmdq_core_free_pool_buf(struct cmdq_pkt_buffer *buf);
 void cmdq_core_dump_sram(void);
 s32 cmdq_core_alloc_sram_buffer(size_t size,
 	const char *owner_name, u32 *out_cpr_offset);
@@ -889,6 +886,7 @@ u32 cmdqCoreGetEvent(enum cmdq_event event);
 
 
 /* GCE capability */
+void cmdq_core_reset_gce(void);
 void cmdq_core_set_addon_subsys(u32 msb, s32 subsys_id, u32 mask);
 u32 cmdq_core_subsys_to_reg_addr(u32 arg_a);
 const char *cmdq_core_parse_subsys_from_reg_addr(u32 reg_addr);
@@ -908,7 +906,7 @@ ssize_t cmdq_core_write_profile_enable(struct device *dev,
 
 void cmdq_core_dump_tasks_info(void);
 struct cmdqRecStruct *cmdq_core_get_valid_handle(unsigned long job);
-u32 *cmdq_core_get_pc(const struct cmdqRecStruct *handle,
+u32 *cmdq_core_get_pc_inst(const struct cmdqRecStruct *handle,
 	s32 thread, u32 insts[2], u32 *pa_out);
 void cmdq_core_dump_handle_buffer(const struct cmdq_pkt *pkt,
 	const char *tag);
@@ -924,22 +922,23 @@ s32 cmdq_core_suspend_hw_thread(s32 thread);
 u64 cmdq_core_get_gpr64(const enum cmdq_gpr_reg regID);
 void cmdq_core_set_gpr64(const enum cmdq_gpr_reg regID, const u64 value);
 
+void cmdq_core_release_handle_by_file_node(void *file_node);
 s32 cmdq_core_suspend(void);
 s32 cmdq_core_resume(void);
 s32 cmdq_core_resume_notifier(void);
 
+void cmdq_core_set_spm_mode(enum CMDQ_SPM_MODE mode);
+
 struct cmdq_dts_setting *cmdq_core_get_dts_setting(void);
 struct ContextStruct *cmdq_core_get_context(void);
 struct CmdqCBkStruct *cmdq_core_get_group_cb(void);
-void cmdq_core_release_handle_by_file_node(void *file_node);
+dma_addr_t cmdq_core_get_pc(s32 thread);
+dma_addr_t cmdq_core_get_end(s32 thread);
 unsigned long cmdq_get_tracing_mark(void);
 const struct cmdq_controller *cmdq_core_get_controller(void);
 
 
 /* mailbox pkt flush functions */
-
-s32 cmdq_pkt_append_command(struct cmdqRecStruct *handle,
-	u32 arg_a, u32 arb_b);
 
 s32 cmdq_pkt_get_cmd_by_pc(const struct cmdqRecStruct *handle, u32 pc,
 	u32 *inst_out, u32 size);
@@ -951,8 +950,6 @@ void *cmdq_pkt_get_first_va(const struct cmdqRecStruct *handle);
 
 s32 cmdq_pkt_alloc_single_buffer_list(struct cmdqRecStruct *handle,
 	struct cmdq_pkt_buffer **buf_out);
-
-void cmdq_pkt_release_buffer(struct cmdq_pkt *pkt);
 
 s32 cmdq_pkt_extend_cmd_buffer(struct cmdqRecStruct *handle);
 
@@ -991,8 +988,14 @@ s32 cmdq_pkt_stop(struct cmdqRecStruct *handle);
 /* mailbox helper functions */
 
 s32 cmdq_helper_mbox_register(struct device *dev);
+struct cmdq_client *cmdq_helper_mbox_client(u32 idx);
+struct cmdq_base *cmdq_helper_mbox_base(void);
+void cmdq_helper_mbox_clear_pools(void);
 void cmdq_core_initialize(void);
 void cmdq_core_deinitialize(void);
 void cmdq_helper_ext_deinit(void);
 
+struct cmdqSecSharedMemoryStruct *cmdq_core_get_secure_shared_memory(void);
+void cmdq_core_attach_error_handle(const struct cmdqRecStruct *handle,
+	s32 thread);
 #endif

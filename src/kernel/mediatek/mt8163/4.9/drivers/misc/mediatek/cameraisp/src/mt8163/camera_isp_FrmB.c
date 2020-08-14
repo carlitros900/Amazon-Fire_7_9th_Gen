@@ -1161,6 +1161,7 @@ static void ISP_FBC_DUMP(unsigned int dma_id, unsigned int VF_1,
 	char str[128];
 	char str2[_rt_dma_max_];
 	unsigned int dma;
+	int len = sizeof(str) - 1;
 
 	LOG_INF("================================\n");
 	LOG_INF("pass1 timeout log(timeout port:%d)", dma_id);
@@ -1169,7 +1170,7 @@ static void ISP_FBC_DUMP(unsigned int dma_id, unsigned int VF_1,
 	LOG_INF("current activated dmaport");
 	for (z = 0; z < _rt_dma_max_; z++) {
 		sprintf(str2, "%d_", pstRTBuf_FrmB->ring_buf[z].active);
-		strcat(str, str2);
+		strncat(str, str2, len);
 	}
 	LOG_INF("%s", str);
 	LOG_INF("================================\n");
@@ -1185,7 +1186,7 @@ static void ISP_FBC_DUMP(unsigned int dma_id, unsigned int VF_1,
 					pstRTBuf_FrmB->ring_buf[dma]
 						.data[z]
 						.bFilled);
-				strcat(str, str2);
+				strncat(str, str2, len - strlen(str));
 			}
 			LOG_INF("%s", str);
 			LOG_INF("================================\n");
@@ -1200,7 +1201,7 @@ static void ISP_FBC_DUMP(unsigned int dma_id, unsigned int VF_1,
 			str[0] = '\0';
 			for (z = 0; z < ISP_RT_BUF_SIZE; z++) {
 				sprintf(str2, "%d_", dma_en_recorder[dma][z]);
-				strcat(str, str2);
+				strncat(str, str2, len - strlen(str));
 			}
 			LOG_INF("%s", str);
 			LOG_INF("================================\n");
@@ -1208,7 +1209,7 @@ static void ISP_FBC_DUMP(unsigned int dma_id, unsigned int VF_1,
 			str[0] = '\0';
 			for (z = 0; z < ISP_RT_BUF_SIZE; z++) {
 				sprintf(str2, "%d_", mFwRcnt.INC[_IRQ][z]);
-				strcat(str, str2);
+				strncat(str, str2, len - strlen(str));
 			}
 			LOG_INF("%s", str);
 			LOG_INF("RCNT_RECORD: dma idx = %d\n",
@@ -1232,7 +1233,7 @@ static void ISP_FBC_DUMP(unsigned int dma_id, unsigned int VF_1,
 					pstRTBuf_FrmB->ring_buf[dma]
 						.data[z]
 						.bFilled);
-				strcat(str, str2);
+				strncat(str, str2, len - strlen(str));
 			}
 			LOG_INF("%s", str);
 			LOG_INF("================================\n");
@@ -1247,7 +1248,7 @@ static void ISP_FBC_DUMP(unsigned int dma_id, unsigned int VF_1,
 			str[0] = '\0';
 			for (z = 0; z < ISP_RT_BUF_SIZE; z++) {
 				sprintf(str2, "%d_", dma_en_recorder[dma][z]);
-				strcat(str, str2);
+				strncat(str, str2, len - strlen(str));
 			}
 			LOG_INF("%s", str);
 			LOG_INF("================================\n");
@@ -1255,7 +1256,7 @@ static void ISP_FBC_DUMP(unsigned int dma_id, unsigned int VF_1,
 			str[0] = '\0';
 			for (z = 0; z < ISP_RT_BUF_SIZE; z++) {
 				sprintf(str2, "%d_", mFwRcnt.INC[_IRQ][z]);
-				strcat(str, str2);
+				strncat(str, str2, len - strlen(str));
 			}
 			LOG_INF("%s", str);
 			LOG_INF("RCNT_RECORD: dma idx = %d\n",
@@ -1279,6 +1280,9 @@ ISP_RTBC_DEQUE_FRMB(signed int dma,
 	signed int rt_dma = dma;
 	unsigned int i = 0;
 	unsigned int index = 0;
+	unsigned int out = 0;
+
+	DMA_TRANS(rt_dma, out);
 
 	/* spin_lock_irqsave(&(IspInfo_FrmB.SpinLockRTBC),g_Flash_SpinLock); */
 	/*  */
@@ -1300,6 +1304,7 @@ ISP_RTBC_DEQUE_FRMB(signed int dma,
 			pstRTBuf_FrmB->ring_buf[rt_dma].data[index].bFilled =
 				ISP_RTBC_BUF_LOCKED;
 			pdeque_buf->count = P1_DEQUE_CNT;
+			pdeque_buf->sof_cnt = sof_count[out];
 			break;
 		}
 	}
@@ -1922,6 +1927,8 @@ static long ISP_Buf_CTRL_FUNC_FRMB(unsigned long Param)
 								break;
 							}
 						}
+					if (i == ISP_RT_BUF_SIZE)
+						return -EFAULT;
 					}
 					/* set RCN_INC = 1; */
 					/* RCNT++ */
@@ -2507,7 +2514,7 @@ static long ISP_Buf_CTRL_FUNC_FRMB(unsigned long Param)
 					       1; /* RCNT = [1,2,3,...] */
 #endif
 					for (i = 0; i < deque_buf.count; i++) {
-						unsigned int out;
+						unsigned int out = 0;
 
 						deque_buf.data[i].memID =
 							pstRTBuf_FrmB
@@ -2725,7 +2732,7 @@ static long ISP_Buf_CTRL_FUNC_FRMB(unsigned long Param)
 							/*  */
 							IRQ_LOG_KEEPER(
 								irqT, 0,
-								_LOG_DBG,
+								_LOG_INF,
 								"m# uncertain:dma(%d),m0(0x%x),fcnt(0x%x),Lm#(0x%x)",
 								rt_dma,
 								deque_buf
@@ -2807,10 +2814,19 @@ static long ISP_Buf_CTRL_FUNC_FRMB(unsigned long Param)
 							 .bFilled !=
 						 ISP_RTBC_BUF_FILLED) {
 						bBufFilled = MFALSE;
+			        if ((_DUMMY_MAGIC_ &
+			                deque_buf.data[i].
+			                image.m_num_0) == 0)
+			                deque_buf.data[i].
+			                image.m_num_0 |=
+			                _UNCERTAIN_MAGIC_NUM_FLAG_;
+
+					}else {
+						pstRTBuf_FrmB->ring_buf[
+						rt_dma].data[iBuf + i].
+						bFilled =
+						ISP_RTBC_BUF_EMPTY;
 					}
-					pstRTBuf_FrmB->ring_buf[rt_dma]
-						.data[iBuf + i]
-						.bFilled = ISP_RTBC_BUF_LOCKED;
 					deque_buf.sof_cnt = sof_count[out];
 					deque_buf.img_cnt =
 						pstRTBuf_FrmB->ring_buf[rt_dma]
@@ -4600,7 +4616,8 @@ ISP_ED_BufQue_CTRL_FUNC_FRMB(struct ISP_ED_BUFQUE_STRUCT_FRMB param)
 
 			/* [3] add new buffer package in manager list */
 			if (param.p2burstQIdx == 0) {
-				if (P2_EDBUF_MList_FirstBufIdx ==
+				if (P2_EDBUF_MList_FirstBufIdx != -1 &&
+					P2_EDBUF_MList_FirstBufIdx ==
 					    P2_EDBUF_MList_LastBufIdx &&
 				    P2_EDBUF_MgrList[P2_EDBUF_MList_FirstBufIdx]
 						    .p2dupCQIdx ==
@@ -4732,12 +4749,14 @@ ISP_ED_BufQue_CTRL_FUNC_FRMB(struct ISP_ED_BUFQUE_STRUCT_FRMB param)
 		 */
 		idx2 = ISP_ED_BufQue_Get_FirstMatBuf(param, P2_EDBUF_RLIST_TAG,
 						     1);
+		if (idx2 != -1) {
 		if (param.ctrl == ISP_ED_BUFQUE_CTRL_DEQUE_SUCCESS) {
 			P2_EDBUF_RingList[idx2].bufSts =
 				ISP_ED_BUF_STATE_DEQUE_SUCCESS;
 		} else {
 			P2_EDBUF_RingList[idx2].bufSts =
 				ISP_ED_BUF_STATE_DEQUE_FAIL;
+			}
 		}
 		/* [2]update dequeued num in managed buffer list */
 		idx = ISP_ED_BufQue_Get_FirstMatBuf(param, P2_EDBUF_MLIST_TAG,
@@ -4913,8 +4932,10 @@ static signed int ISP_REGISTER_IRQ_USERKEY(char *userName)
 				} else {
 					memset(IrqUserKey_UserInfo[i].userName,
 					       0, USERKEY_STR_LEN);
-					strcpy(IrqUserKey_UserInfo[i].userName,
-					       m_UserName);
+					strncpy(IrqUserKey_UserInfo[i].userName,
+					       m_UserName,
+					       USERKEY_STR_LEN - 1);
+					IrqUserKey_UserInfo[i].userName[USERKEY_STR_LEN - 1] = '\0';
 					IrqUserKey_UserInfo[i].userKey =
 						FirstUnusedIrqUserKey;
 					key = FirstUnusedIrqUserKey;

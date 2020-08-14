@@ -323,7 +323,8 @@ static void copysinewavetohdmi(unsigned int channels)
 	}
 	if (channels == 0) {
 		/* using for observe data */
-		memset((void *)(Bufferaddr), 0x7f7f7f7f, Hhdmi_Buffer_length);
+		memset_io((void *)(Bufferaddr), 0x7f7f7f7f,
+			Hhdmi_Buffer_length);
 		pr_debug("use fix pattern, addr = %p, len = %d\n",
 			Bufferaddr, Hhdmi_Buffer_length);
 		return;

@@ -70,16 +70,19 @@
 #define RTC_NEW_SPARE3_THERMAL_SHUTDOWN_BTS                   (1U << 15)
 
 /*
- * RTC_SPAR0:
+ * RTC_SPAR1:
  *     bit 0 - 5 : SEC in power-on time
  *     bit 6 	 : 32K less bit. True:with 32K, False:Without 32K
  *     bit 9 - 15: reserved bits
+ *     bit 13      : QUIESCENT mode
  */
 #define RTC_SPAR0_SPECIAL_MODE_LOW_BATTERY                    (1U << 9)
 #define RTC_SPAR0_SPECIAL_MODE_WARM_BOOT_USB_CONNECTED        (1U << 10)
 #define RTC_SPAR0_SPECIAL_MODE_OTA                            (1U << 11)
 #define RTC_SPAR0_SPECIAL_MODE_FACTORY_RESET                  (1U << 12)
 #define RTC_SPAR0_SPECIAL_MODE_MASK                           0xfe00
+#define PMIC_RTC_SPAR1_QUIESCENT                              (1U << 13)
+#define PMIC_RTC_SPAR1_QUIESCENT_MASK                         (1U << 13)
 
 /*drivers/watchdog/mediatek/wdt/common/mtk_wdt.c*/
 extern void mtk_wdt_mode_config(bool dual_mode_en, bool irq, bool ext_en, bool ext_pol, bool wdt_en);
@@ -336,6 +339,23 @@ static int (mtk_write_special_mode)(life_cycle_reason_t special_mode)
 	rtc_release_lock();
 	return 0;
 }
+
+int rtc_mark_quiescent(int value)
+{
+	u16 rtc_special_mode;
+
+	rtc_acquire_lock();
+	rtc_special_mode = rtc_read(RTC_SPAR1);
+	if (value == 0)
+		rtc_special_mode &= ~PMIC_RTC_SPAR1_QUIESCENT;
+	else
+		rtc_special_mode |= PMIC_RTC_SPAR1_QUIESCENT;
+	rtc_write(RTC_SPAR1, rtc_special_mode);
+	rtc_write_trigger();
+	rtc_release_lock();
+	return 0;
+}
+EXPORT_SYMBOL(rtc_mark_quiescent);
 
 int mtk_lcr_reset(void)
 {

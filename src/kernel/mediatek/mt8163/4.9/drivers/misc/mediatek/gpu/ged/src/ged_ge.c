@@ -170,9 +170,6 @@ int ged_ge_exit(void)
 	return 0;
 }
 
-#define GE_REGION_NUM_MAX       8
-#define GE_REGION_SIZE_MAX      256
-
 int ged_ge_alloc(int region_num, uint32_t *region_sizes)
 {
 	unsigned long flags;
@@ -180,15 +177,13 @@ int ged_ge_alloc(int region_num, uint32_t *region_sizes)
 	GEEntry *entry = NULL;
 
 	if (region_num < 0 || region_num >= GE_REGION_NUM_MAX) {
-		GED_PDEBUG("region num check fail, region_num:%d\n",
-			region_num);
+		GED_PDEBUG("region num check fail, region_num:%d\n", region_num);
 		goto err_entry;
 	}
 
 	for (i = 0; i < region_num; ++i) {
-		if (region_sizes[i] >= GE_REGION_SIZE_MAX) {
-		GED_PDEBUG("region size check fail, region_sizes[%d]:%d\n",
-			i, region_sizes[i]);
+		if (region_sizes[i] > GE_REGION_SIZE_MAX) {
+			GED_PDEBUG("region size check fail, region_sizes[%d]:%d\n", i, region_sizes[i]);
 			goto err_entry;
 		}
 	}
@@ -259,12 +254,12 @@ static void dump_ge_regions(GEEntry *entry)
 static int valid_parameters(GEEntry *entry, int region_id, int u32_offset, int u32_size)
 {
 	if (region_id < 0 || region_id >= entry->region_num ||
-	u32_offset < 0 || u32_size < 0 ||
-	u32_offset > entry->region_sizes[region_id]/sizeof(uint32_t) ||
-	u32_offset >= UINT_MAX - u32_size ||
-	(u32_offset + u32_size) >
-		entry->region_sizes[region_id]/sizeof(uint32_t)
-	) {
+		u32_offset < 0 || u32_size < 0 ||
+		u32_offset > entry->region_sizes[region_id]/sizeof(uint32_t) ||
+		u32_offset >= UINT_MAX - u32_size ||
+		(u32_offset + u32_size) >
+			entry->region_sizes[region_id]/sizeof(uint32_t)
+		) {
 
 		GED_PDEBUG("fail, invalid r_id %d, o %d, s %d\n",
 				region_id, u32_offset, u32_size);

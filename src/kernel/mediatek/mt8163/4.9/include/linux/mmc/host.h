@@ -344,7 +344,12 @@ struct mmc_host {
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
-		struct delayed_work 	metrics_delay_work; /* delayed metrics output */
+	struct delayed_work 	metrics_delay_work; /* delayed metrics output */
+	struct delayed_work metrics_timeout_work; /* delayed metrics output */
+	atomic64_t data_count; /* total send data count */
+	atomic64_t data_timeout_count; /* data timeout count */
+	struct mutex cid_mutex; /*mutex for CID RW */
+	char cid[40]; /* raw card CID */
 #endif /* CONFIG_AMAZON_METRICS_LOG */
 
 	/* host specific block data */
@@ -486,7 +491,8 @@ struct mmc_host {
 
 #ifdef CONFIG_BLOCK
 	int			latency_hist_enabled;
-	struct io_latency_state io_lat_s;
+	struct io_latency_state io_lat_read;
+	struct io_latency_state io_lat_write;
 #endif
 
 	unsigned long		private[0] ____cacheline_aligned;

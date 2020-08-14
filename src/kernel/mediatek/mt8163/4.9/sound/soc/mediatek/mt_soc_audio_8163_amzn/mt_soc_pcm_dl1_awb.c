@@ -159,11 +159,6 @@ static snd_pcm_uframes_t mtk_dl1_awb_pcm_pointer(
 	PRINTK_AUD_AWB("Awb_Block->u4WriteIdx = 0x%x\n",
 		Awb_Block->u4WriteIdx);
 	if (GetMemoryPathEnable(Soc_Aud_Digital_Block_MEM_AWB) == true) {
-		/* get total bytes to copysinewavetohdmi */
-		Frameidx = audio_bytes_to_frame(substream,
-			Awb_Block->u4WriteIdx);
-		return Frameidx;
-
 		HW_Cur_ReadIdx = Align64ByteSize(Afe_Get_Reg(AFE_AWB_CUR));
 		if (HW_Cur_ReadIdx == 0) {
 			pr_debug("mtk_awb_pcm_pointer HW_Cur_ReadIdx == 0\n");
@@ -175,7 +170,9 @@ static snd_pcm_uframes_t mtk_dl1_awb_pcm_pointer(
 			HW_Cur_ReadIdx, HW_memory_index);
 		return audio_bytes_to_frame(substream, Previous_Hw_cur);
 	}
-	return 0;
+	/* get total bytes to copysinewavetohdmi */
+	Frameidx = audio_bytes_to_frame(substream, Awb_Block->u4WriteIdx);
+	return Frameidx;
 }
 
 

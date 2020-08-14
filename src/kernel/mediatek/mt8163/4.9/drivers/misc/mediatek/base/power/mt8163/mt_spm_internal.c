@@ -303,6 +303,7 @@ int
 {
 	int i;
 	char buf[LOG_BUF_SIZE] = { 0 };
+	char *local_ptr;
 	int wr = WR_UNKNOWN;
 
 	if (wakesta->assert_pc != 0) {
@@ -315,21 +316,30 @@ int
 
 	if (wakesta->r12 & WAKE_SRC_SPM_MERGE) {
 		if (wakesta->wake_misc & WAKE_MISC_PCM_TIMER) {
-			strcat(buf, " PCM_TIMER");
+			local_ptr = " PCM_TIMER";
+			if ((strlen(buf) + strlen(local_ptr)) < LOG_BUF_SIZE)
+				strncat(buf, local_ptr, strlen(local_ptr));
 			wr = WR_PCM_TIMER;
 		}
 		if (wakesta->wake_misc & WAKE_MISC_TWAM) {
-			strcat(buf, " TWAM");
+			local_ptr = " TWAM";
+			if ((strlen(buf) + strlen(local_ptr)) < LOG_BUF_SIZE)
+				strncat(buf, local_ptr, strlen(local_ptr));
 			wr = WR_WAKE_SRC;
 		}
 		if (wakesta->wake_misc & WAKE_MISC_CPU_WAKE) {
-			strcat(buf, " CPU");
+			local_ptr = " CPU";
+			if ((strlen(buf) + strlen(local_ptr)) < LOG_BUF_SIZE)
+				strncat(buf, local_ptr, strlen(local_ptr));
 			wr = WR_WAKE_SRC;
 		}
 	}
 	for (i = 1; i < 32; i++) {
 		if (wakesta->r12 & (1U << i)) {
-			strcat(buf, wakesrc_str[i]);
+			if ((strlen(buf) + strlen(wakesrc_str[i]))
+				< LOG_BUF_SIZE)
+				strncat(buf, wakesrc_str[i],
+					strlen(wakesrc_str[i]));
 			wr = WR_WAKE_SRC;
 		}
 	}

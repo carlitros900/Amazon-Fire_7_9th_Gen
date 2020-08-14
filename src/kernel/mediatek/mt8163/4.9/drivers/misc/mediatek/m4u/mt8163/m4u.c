@@ -421,7 +421,7 @@ static int m4u_fill_sgtable_user(struct vm_area_struct *vma, unsigned long va,
 
 		for (fault_cnt = 0; fault_cnt < 3000; fault_cnt++) {
 			if (has_page) {
-				ret = get_user_pages(va_tmp, 1, (FOLL_GET |
+				ret = get_user_pages(va_tmp, 1, (/*FOLL_GET |*/
 					(vma->vm_flags & VM_WRITE) ?
 					FOLL_WRITE : 0),
 					&page, NULL);
@@ -974,9 +974,6 @@ int m4u_dealloc_mva_fix(struct m4u_client_t *client, int port, unsigned int mva)
 		M4UMSG("do_mva_free fail\n");
 	}
 
-	if (pMvaInfo->va)	/* buffer is allocated by va */
-		m4u_destroy_sgtable(pMvaInfo->sg_table);
-
 	#if 0
 	if (pMvaInfo->flags & M4U_FLAGS_SEQ_ACCESS) {
 		if (pMvaInfo->seq_id > 0)
@@ -991,6 +988,9 @@ int m4u_dealloc_mva_fix(struct m4u_client_t *client, int port, unsigned int mva)
 		ret = -EINVAL;
 	} else
 		ret = 0;
+
+	if (pMvaInfo->va)	/* buffer is allocated by va */
+		m4u_destroy_sgtable(pMvaInfo->sg_table);
 
 	size = pMvaInfo->size;
 

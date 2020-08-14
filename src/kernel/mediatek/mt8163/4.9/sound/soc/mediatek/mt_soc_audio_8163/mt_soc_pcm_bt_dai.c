@@ -166,16 +166,8 @@ static snd_pcm_uframes_t mtk_bt_dai_pcm_pointer(
 	PRINTK_AUD_DAI
 	("mtk_bt_dai_pcm_pointer Dai_Block->u4DMAReadIdx;= 0x%x\n",
 	Dai_Block->u4WriteIdx);
-	/* get total bytes to copy */
-	Frameidx = audio_bytes_to_frame(substream, Dai_Block->u4WriteIdx);
-	return Frameidx;
 
 	if (Bt_Dai_Control_context->interruptTrigger == 1) {
-		/* get total bytes to copy */
-		Frameidx = audio_bytes_to_frame(substream,
-			 Dai_Block->u4DMAReadIdx);
-		return Frameidx;
-
 		HW_Cur_ReadIdx = Align64ByteSize(Afe_Get_Reg(AFE_DAI_CUR));
 		if (HW_Cur_ReadIdx == 0) {
 			pr_debug("[Auddrv] mtk_bt_dai_pcm_pointer  HW_Cur_ReadIdx == 0\n");
@@ -188,7 +180,9 @@ static snd_pcm_uframes_t mtk_bt_dai_pcm_pointer(
 		Bt_Dai_Control_context->interruptTrigger = 0;
 		return (HW_memory_index / substream->runtime->channels);
 	}
-	return (Previous_Hw_cur / substream->runtime->channels);
+	/* get total bytes to copy */
+	Frameidx = audio_bytes_to_frame(substream, Dai_Block->u4WriteIdx);
+	return Frameidx;
 }
 
 

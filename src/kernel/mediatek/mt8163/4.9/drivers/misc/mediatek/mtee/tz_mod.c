@@ -51,9 +51,14 @@
 #include "tz_playready.h"
 
 #include "tz_secure_clock.h"
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+#include  <linux/metricslog.h>
+#endif
+
 #define MTEE_MOD_TAG "MTEE_MOD"
 
-#define TZ_PAGESIZE 0x1000	/* fix me!!!! need global define */
+#define MAX_TAG_SIZE   32
 
 #define TZ_DEVNAME "mtk_tz"
 
@@ -253,6 +258,15 @@ static int tz_client_release(struct inode *inode, struct file *filp)
 
 	return 0;
 }
+
+#ifdef CONFIG_MTEE_CMA_SECURE_MEMORY
+long __weak get_user_pages_durable(unsigned long start,
+		unsigned long nr_pages, unsigned int gup_flags,
+		struct page **pages, struct vm_area_struct **vmas)
+{
+	return get_user_pages(start, nr_pages, gup_flags, pages, vmas);
+}
+#endif
 
 /* map user space pages */
 /* control -> 0 = write, 1 = read only memory */
@@ -1144,6 +1158,9 @@ static long tz_client_reg_sharedmem_with_tag(struct file *file,
 	if (cret)
 		return -EFAULT;
 
+	if (cparam.tag_size > MAX_TAG_SIZE)
+		cparam.tag_size = MAX_TAG_SIZE;
+
 	return __tz_reg_sharedmem(file, arg, &cparam);
 }
 
@@ -1358,12 +1375,23 @@ static struct cma *tz_cma;
 static struct page *secure_pages;
 static size_t secure_size;
 
+struct page __weak *cma_alloc_large(struct cma *cma, int count, unsigned int align)
+{
+	return cma_alloc(cma, count, align);
+}
+
+static s64 failms;
 /* TEE chunk memory allocate by REE service
  */
 int KREE_ServGetChunkmemPool(u32 op,
 			u8 uparam[REE_SERVICE_BUFFER_SIZE])
 {
 	struct ree_service_chunk_mem *chunkmem;
+	s64 ms;
+	ktime_t before, after;
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	char buf[128];
+#endif
 
 	if (!tz_cma)
 		return TZ_RESULT_ERROR_OUT_OF_MEMORY;
@@ -1377,18 +1405,33 @@ int KREE_ServGetChunkmemPool(u32 op,
 	}
 
 	secure_size = cma_get_size(tz_cma);
+	before = ktime_get();
 	secure_pages = cma_alloc_large(tz_cma, secure_size/SZ_4K,
 					get_order(SZ_1M));
+	after = ktime_get();
+	ms =  ktime_to_ms(after) - ktime_to_ms(before);
 	if (secure_pages == NULL) {
-		pr_warn("%s() cma_alloc() failed!\n", __func__);
+		failms += ms;
+		pr_warn("%s() cma_alloc() failed! takes %lld\n", __func__, ms);
 		return TZ_RESULT_ERROR_OUT_OF_MEMORY;
 	}
 	chunkmem->size = secure_size;
 	chunkmem->chunkmem_pa = (uint64_t)page_to_phys(secure_pages);
 
-	pr_info("%s() get @%llx [0x%zx]\n", __func__,
-			chunkmem->chunkmem_pa, secure_size);
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	snprintf(buf, sizeof(buf),
+		"cma_alloc:def:cma_alloc_success=1;CT;1,cma_alloc_latency_ms=%lld;CT;1:NR",
+		ms + failms);
+	log_to_metrics(ANDROID_LOG_INFO, "cma_alloc", buf);
+	log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel", "cma_alloc",
+		"cma_alloc_latency_ms", (u32)(ms + failms), "count", NULL, VITALS_NORMAL);
+	log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel", "cma_alloc",
+		"cma_alloc_success", 1, "count", NULL, VITALS_NORMAL);
+#endif
 
+	pr_info("%s() get @%llx [0x%zx] takes %lld ms\n", __func__,
+			chunkmem->chunkmem_pa, secure_size, ms + failms);
+	failms = 0;
 	/* flush cache to avoid writing secure memory after allocation. */
 	smp_inner_dcache_flush_all();
 

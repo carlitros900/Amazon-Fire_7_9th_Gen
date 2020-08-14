@@ -28,13 +28,16 @@
 #include <linux/uidgid.h>
 #include <linux/uaccess.h>
 #include "mt-plat/battery_meter.h"
-#include <linux/platform_data/mtk_thermal.h>
 #include "mt-plat/mtk_thermal_monitor.h"
 #include "mach/mt_thermal.h"
 #include "inc/mtk_ts_cpu.h"
 
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 #include <linux/sign_of_life.h>
+#endif
+
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
+#include <linux/thermal_framework.h>
 #endif
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
@@ -349,20 +352,28 @@ static int mtktsbattery_thermal_notify(struct thermal_zone_device *thermal,
 
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 	if (type == THERMAL_TRIP_CRITICAL) {
-		pr_debug("[%s] Thermal shutdown Battery, temp=%d, trip=%d\n",
+		pr_err("[%s] Thermal shutdown Battery, temp=%d, trip=%d\n",
 			__func__, thermal->temperature, trip);
 		life_cycle_set_thermal_shutdown_reason(
 			THERMAL_SHUTDOWN_REASON_BATTERY);
 	}
 #endif
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
 	if (type == THERMAL_TRIP_CRITICAL) {
+		pr_err("%s: thermal_shutdown notify\n", __func__);
+		last_kmsg_thermal_shutdown();
+		pr_err("%s: thermal_shutdown notify end\n", __func__);
+	}
+#endif
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	if (type == THERMAL_TRIP_CRITICAL &&
 		snprintf(buf, TSBATTERY_METRICS_STR_LEN,
 			"%s:tsbatterymonitor;CT;1,temp=%d;trip=%d;CT;1:NR",
-			PREFIX, thermal->temperature, trip);
+			PREFIX, thermal->temperature, trip) > 0)
 		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-	}
+
 #endif
 
 	return 0;
@@ -425,20 +436,20 @@ static int tsbat_sysrst_set_cur_state(struct thermal_cooling_device *cdev,
 {
 	cl_dev_sysrst_state = state;
 	if (cl_dev_sysrst_state == 1) {
-		pr_debug("Power/battery_Thermal: reset, reset, reset!!!");
-		pr_debug("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
-		pr_debug("*****************************************");
-		pr_debug("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+		pr_err("Power/battery_Thermal: reset, reset, reset!!!");
+		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+		pr_err("*****************************************");
+		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
 
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 		life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_BATTERY);
 #endif
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
-		snprintf(mBuf, THERMO_METRICS_STR_LEN,
+		if (snprintf(mBuf, THERMO_METRICS_STR_LEN,
 			 "%s;thermal_caught_shutdown=1;CT;1:NR",
-			 mPrefix);
-		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", mBuf);
+			 mPrefix) > 0)
+			log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", mBuf);
 #endif
 
 /* To trigger data abort to reset the system for thermal protection. */
@@ -529,6 +540,9 @@ static ssize_t mtktsbattery_write(struct file *file,
 		mtktsbattery_dprintk(
 			"[mtktsbattery_write] mtktsbattery_unregister_thermal\n");
 		mtktsbattery_unregister_thermal();
+
+		if (num_trip < 0 || num_trip > 10)
+			return -EINVAL;
 
 		for (i = 0; i < num_trip; i++)
 			g_THERMAL_TRIP[i] = t_type[i];

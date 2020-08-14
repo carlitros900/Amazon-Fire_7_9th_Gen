@@ -206,6 +206,7 @@ void led_blink_set(struct led_classdev *led_cdev,
 {
 	del_timer_sync(&led_cdev->blink_timer);
 
+	led_cdev->flags &= ~LED_BLINK_SW;
 	led_cdev->flags &= ~LED_BLINK_ONESHOT;
 	led_cdev->flags &= ~LED_BLINK_ONESHOT_STOP;
 
@@ -246,6 +247,10 @@ EXPORT_SYMBOL_GPL(led_stop_software_blink);
 void led_set_brightness(struct led_classdev *led_cdev,
 			enum led_brightness brightness)
 {
+	if (led_cdev->brightness != LED_OFF && brightness == LED_OFF)
+		pr_notice("[METRIC_DISP] LED OFF\n");
+	else if (led_cdev->brightness == LED_OFF && brightness != LED_OFF)
+		pr_notice("[METRIC_DISP] LED ON\n");
 	/*
 	 * If software blink is active, delay brightness setting
 	 * until the next timer tick.

@@ -525,6 +525,7 @@ bool usb_cable_connected(void)
 #endif
 
 	charge_type = mt_get_charger_type();
+	DBG(0, "%s: %d\n", __func__, charge_type);
 
 	if ((charge_type == STANDARD_HOST) || (charge_type == CHARGING_HOST))
 		return true;
@@ -779,14 +780,14 @@ static ssize_t mt_usb_store_saving_mode(struct device *dev,
 					struct device_attribute *attr,
 					const char *buf, size_t count)
 {
-	int saving;
+	long saving;
 
 	if (!dev) {
 		DBG(0, "dev is null!!\n");
 		return count;
 		/* } else if (1 == sscanf(buf, "%d", &saving)) { */
 	} else if (kstrtol(buf, 10, (long *)&saving) == 0) {
-		DBG(0, "old=%d new=%d\n", saving, saving_mode);
+		DBG(0, "old=%ld new=%d\n", saving, saving_mode);
 		if (saving_mode == (!saving))
 			saving_mode = !saving_mode;
 	}
@@ -1328,7 +1329,7 @@ static int mt_usb_probe(struct platform_device *pdev)
 		goto err0;
 	}
 
-	musb = platform_device_alloc("musb-hdrc", PLATFORM_DEVID_AUTO);
+	musb = platform_device_alloc("musb-hdrc", PLATFORM_DEVID_NONE);
 	if (!musb) {
 		dev_err(&pdev->dev, "failed to allocate musb device\n");
 		goto err1;

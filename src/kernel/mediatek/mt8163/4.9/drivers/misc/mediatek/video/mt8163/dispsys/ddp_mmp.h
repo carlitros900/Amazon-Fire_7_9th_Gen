@@ -67,6 +67,9 @@ struct DDP_MMP_Events_t {
 	MMP_Event primary_seq_release;
 	MMP_Event primary_ovl_fence_release;
 	MMP_Event primary_wdma_fence_release;
+	MMP_Event present_fence_release;
+	MMP_Event present_fence_get;
+	MMP_Event present_fence_set;
 	MMP_Event ovl_trigger;
 	MMP_Event interface_trigger;
 	MMP_Event Extd_Parent;

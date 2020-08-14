@@ -62,7 +62,6 @@
 #include <linux/kthread.h>
 #include <linux/dma-mapping.h>
 #include "focaltech_common.h"
-#include <mt-plat/mtk_boot_common.h>
 
 /*****************************************************************************
 * Private constant and macro definitions using #define

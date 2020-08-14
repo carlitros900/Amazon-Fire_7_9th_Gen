@@ -47,7 +47,6 @@ static struct dentry* gpsDvfsPreFreqEntry = NULL;
 static struct dentry* gpsDvfsGpuUtilizationEntry = NULL;
 static struct dentry* gpsFpsUpperBoundEntry = NULL;
 static struct dentry* gpsIntegrationReportReadEntry = NULL;
-static struct dentry *gpsSystraceGPUInfoEntry;
 #ifdef GED_FDVFS_ENABLE
 static struct dentry *gpsGpuFreqHintEntry;
 #endif
@@ -359,7 +358,7 @@ static ssize_t ged_vsync_offset_enable_write_entry(const char __user *pszBuffer,
 	 */    
 
 	char acBuffer[GED_HAL_DEBUGFS_SIZE];
-	int aint32Indx[NUM_TOKEN];
+	int aint32Indx[NUM_TOKEN] = { 0 };
 	char *pcCMD;
 	char *pcValue;
 	int value;
@@ -467,8 +466,6 @@ static int ged_vsync_offset_enable_seq_show(struct seq_file *psSeqFile, void *pv
 			seq_printf(psSeqFile, "Low power mode: %d\n", g_ui32EventStatus & GED_EVENT_LOW_POWER_MODE ? 1 : 0);
 			seq_printf(psSeqFile, "MHL4K Video: %d\n", g_ui32EventStatus & GED_EVENT_MHL4K_VID ? 1 : 0);
 			seq_printf(psSeqFile, "LCD: %d\n", g_ui32EventStatus & GED_EVENT_LCD ? 1 : 0);
-			seq_printf(psSeqFile, "dHWC: %d\n",
-				g_ui32EventStatus & GED_EVENT_DHWC ? 1 : 0);
 		}
 	}
 
@@ -501,11 +498,11 @@ static ssize_t ged_vsync_offset_level_write_entry(
 	 */    
 
 	char acBuffer[GED_HAL_DEBUGFS_SIZE];
-	int aint32Indx[NUM_TOKEN];
+	int aint32Indx[NUM_TOKEN] = { 0 };
 	char* pcCMD;
 	char* pcValue;
 	int i;
-	int i32VsyncOffsetLevel;
+	int i32VsyncOffsetLevel = 0;
 	int ret;
 
 	if (!((0 < uiCount) && (uiCount < GED_HAL_DEBUGFS_SIZE - 1)))
@@ -756,9 +753,9 @@ static int ged_dvfs_gpu_util_seq_show(struct seq_file *psSeqFile, void *pvData)
 {
 	if (pvData != NULL)
 	{
-		unsigned int loading;
-		unsigned int block;
-		unsigned int idle;
+		unsigned int loading = 0;
+		unsigned int block = 0;
+		unsigned int idle = 0;
 		mtk_get_gpu_loading(&loading);
 		mtk_get_gpu_block(&block);
 		mtk_get_gpu_idle(&idle);
@@ -936,79 +933,6 @@ static const struct seq_operations gsKpi_info_ReadOps = {
 	.show = ged_kpi_info_seq_show,
 };
 #endif
-
-/*---------------------- Systrace GPU Info entry------------------------------*/
-static u32 gpuinfo_stauts;
-void ged_hal_set_systrace_gpuinfo_status(u32 *status)
-{
-	if (status)
-		gpuinfo_stauts = *status;
-}
-
-void ged_hal_get_systrace_gpuinfo_status(u32 *status)
-{
-	if (status)
-		*status = gpuinfo_stauts;
-}
-
-static ssize_t ged_systrace_gpuinfo_write_entry(const char __user *pszBuffer,
-		size_t uiCount, loff_t uiPosition, void *pvData)
-{
-#define GED_HAL_DEBUGFS_SIZE 64
-	char acBuffer[GED_HAL_DEBUGFS_SIZE];
-	u32 value;
-
-	if ((uiCount > 0) && (uiCount < GED_HAL_DEBUGFS_SIZE)) {
-		if (ged_copy_from_user(acBuffer, pszBuffer, uiCount) == 0) {
-			acBuffer[uiCount] = '\0';
-			if (kstrtou32(acBuffer, 0, &value) == 0)
-				ged_hal_set_systrace_gpuinfo_status(&value);
-		}
-	}
-
-	return uiCount;
-}
-
-static void *ged_systrace_gpuinfo_seq_start(struct seq_file *psSeqFile,
-	loff_t *puiPosition)
-{
-	if (*puiPosition == 0)
-		return SEQ_START_TOKEN;
-
-	return NULL;
-}
-
-static void ged_systrace_gpuinfo_seq_stop(struct seq_file *psSeqFile,
-					void *pvData)
-{
-
-}
-
-static void *ged_systrace_gpuinfo_seq_next(struct seq_file *psSeqFile,
-				void *pvData, loff_t *puiPosition)
-{
-	return NULL;
-}
-
-static int ged_systrace_gpuinfo_seq_show(struct seq_file *psSeqFile,
-					void *pvData)
-{
-	if (pvData != NULL) {
-		u32 gpuinfo_status;
-
-		ged_hal_get_systrace_gpuinfo_status(&gpuinfo_status);
-		seq_printf(psSeqFile, "%u\n", gpuinfo_status);
-	}
-
-	return 0;
-}
-static const struct seq_operations gssystrace_gpuinfo_ReadOps = {
-	.start = ged_systrace_gpuinfo_seq_start,
-	.stop = ged_systrace_gpuinfo_seq_stop,
-	.next = ged_systrace_gpuinfo_seq_next,
-	.show = ged_systrace_gpuinfo_seq_show,
-};
-/*-----------------------Systrace GPU Info entry------------------------------*/
 
 static struct notifier_block ged_fb_notifier;
 
@@ -1310,15 +1234,6 @@ GED_ERROR ged_hal_init(void)
 		goto ERROR;
 	}
 
-	/* Enable/Disable print out gpu info in systrace */
-	err = ged_debugFS_create_entry(
-			"systrace_gpu_info",
-			gpsHALDir,
-			&gssystrace_gpuinfo_ReadOps,
-			ged_systrace_gpuinfo_write_entry,
-			NULL,
-			&gpsSystraceGPUInfoEntry);
-
 	return err;
 
 ERROR:
@@ -1340,7 +1255,6 @@ void ged_hal_exit(void)
 	ged_debugFS_remove_entry(gpsDvfsCurFreqEntry);
 	ged_debugFS_remove_entry(gpsDvfsPreFreqEntry);
 	ged_debugFS_remove_entry(gpsDvfsGpuUtilizationEntry);
-	ged_debugFS_remove_entry(gpsSystraceGPUInfoEntry);
 #ifdef MTK_GED_KPI
 	ged_debugFS_remove_entry(gpsGedInfoKPIEntry);
 #endif

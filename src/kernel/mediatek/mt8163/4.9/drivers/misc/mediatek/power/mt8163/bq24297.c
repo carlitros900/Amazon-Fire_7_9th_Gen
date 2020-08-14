@@ -746,14 +746,15 @@ static ssize_t show_dump_register(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	int i = 0;
-	char temp_info[200] = "";
+	ssize_t len = 0;
 
 	for (i = 0; i < bq24297_REG_NUM; i++) {
 		bq24297_read_byte(i, &bq24297_reg[i]);
-		sprintf(temp_info, "reg[%x]=0x%x\n", i, bq24297_reg[i]);
-		strcat(buf, temp_info);
+		len += snprintf(buf + len, PAGE_SIZE - len,
+			"reg[%x]=0x%x\n", i, bq24297_reg[i]);
 	}
-	return strlen(buf);
+
+	return len;
 }
 
 static DEVICE_ATTR(dump_register, 0440, show_dump_register, NULL);

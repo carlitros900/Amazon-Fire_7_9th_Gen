@@ -119,8 +119,10 @@ static int mtktsgpu_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	gpu_params = devm_kzalloc(&pdev->dev, sizeof(*gpu_params), GFP_KERNEL);
-	if (!gpu_params)
+	if (!gpu_params) {
+		kfree(virtual_sensor);
 		return -ENOMEM;
+	}
 
 	mutex_init(&virtual_sensor->sensor_mutex);
 	virtual_sensor->dev = &pdev->dev;
@@ -166,9 +168,9 @@ static int mtktsgpu_remove(struct platform_device *pdev)
 {
 	struct virtual_sensor_temp_sensor *virtual_sensor = platform_get_drvdata(pdev);
 
-        if (virtual_sensor->therm_fw)
+	if (virtual_sensor && virtual_sensor->therm_fw)
 		kfree(virtual_sensor->therm_fw);
-        if (virtual_sensor)
+	if (virtual_sensor)
 		kfree(virtual_sensor);
 
 	device_remove_file(&pdev->dev, &dev_attr_params);

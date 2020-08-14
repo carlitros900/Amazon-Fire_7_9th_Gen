@@ -131,6 +131,7 @@ typedef struct GED_KPI_TAG {
 	unsigned long long ullTimeStampS;
 	unsigned long long ullTimeStampH;
 	unsigned int gpu_freq; /* in MHz*/
+	unsigned int gpu_freq_max; /* in MHz*/
 	unsigned int gpu_loading;
 	struct list_head sList;
 	long long t_cpu_remained;
@@ -665,6 +666,8 @@ static inline void ged_kpi_calc_kpi_info(u64 ulID, GED_KPI *psKPI
 #define GED_KPI_FRC_MODE_MASK 0x7
 #define GED_KPI_FRC_CLIENT_SHIFT 13
 #define GED_KPI_FRC_CLIENT_MASK 0xF
+#define GED_KPI_GPU_FREQ_MAX_INFO_SHIFT 19
+#define GED_KPI_GPU_FREQ_MAX_INFO_MASK 0xFFF /* max @ 4096 MHz */
 #define GED_KPI_GPU_FREQ_INFO_SHIFT 7
 #define GED_KPI_GPU_FREQ_INFO_MASK 0xFFF /* max @ 4096 MHz */
 #define GED_KPI_GPU_LOADING_INFO_SHIFT 0
@@ -686,6 +689,9 @@ static void ged_kpi_statistics_and_remove(GED_KPI_HEAD *psHead, GED_KPI *psKPI)
 	frame_attr |= ((psHead->frc_client & GED_KPI_FRC_CLIENT_MASK) << GED_KPI_FRC_CLIENT_SHIFT);
 	gpu_info |= ((psKPI->gpu_freq & GED_KPI_GPU_FREQ_INFO_MASK) << GED_KPI_GPU_FREQ_INFO_SHIFT);
 	gpu_info |= ((psKPI->gpu_loading & GED_KPI_GPU_LOADING_INFO_MASK) << GED_KPI_GPU_LOADING_INFO_SHIFT);
+	gpu_info |=
+		((psKPI->gpu_freq_max & GED_KPI_GPU_FREQ_MAX_INFO_MASK)
+		<< GED_KPI_GPU_FREQ_MAX_INFO_SHIFT);
 	psKPI->frame_attr = frame_attr;
 
 	/* statistics */
@@ -1203,7 +1209,8 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 				psKPI->ullTimeStamp1 - psHead->last_TimeStamp1;
 			psKPI->t_cpu = psHead->t_cpu_latest;
 			ged_log_perf_trace_counter("t_cpu", psKPI->t_cpu,
-				psTimeStamp->pid, psTimeStamp->i32FrameID);
+				psTimeStamp->pid, psTimeStamp->i32FrameID
+				, ulID);
 			psKPI->QedBufferDelay = psHead->last_QedBufferDelay;
 			psHead->last_QedBufferDelay = 0;
 			psHead->last_TimeStamp1 = psKPI->ullTimeStamp1;
@@ -1356,12 +1363,20 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 				psKPI->t_gpu = psHead->t_gpu_latest;
 				ged_log_perf_trace_counter("t_gpu",
 					psKPI->t_gpu, psTimeStamp->pid,
-					psTimeStamp->i32FrameID);
+					psTimeStamp->i32FrameID, ulID);
 				psKPI->gpu_freq = mt_gpufreq_get_cur_freq() / 1000;
+				psKPI->gpu_freq_max =
+					mt_gpufreq_get_freq_by_idx(
+					mt_gpufreq_get_cur_ceiling_idx())
+					/ 1000;
+				ged_log_perf_trace_counter("gpu_freq_max",
+					(long long)psKPI->gpu_freq_max,
+					psTimeStamp->pid,
+					psTimeStamp->i32FrameID, ulID);
 				ged_log_perf_trace_counter("gpu_freq",
 					(long long)psKPI->gpu_freq,
 					psTimeStamp->pid,
-					psTimeStamp->i32FrameID);
+					psTimeStamp->i32FrameID, ulID);
 				psHead->last_TimeStamp2 = psTimeStamp->ullTimeStamp;
 				psHead->i32Gpu_uncompleted--;
 				psKPI->gpu_loading = psTimeStamp->i32GPUloading;
@@ -1370,7 +1385,7 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 				ged_log_perf_trace_counter("gpu_loading",
 					(long long)psKPI->gpu_loading,
 					psTimeStamp->pid
-					, psTimeStamp->i32FrameID);
+					, psTimeStamp->i32FrameID, ulID);
 #ifdef GED_ENABLE_FB_DVFS
 				cur_3D_done = psKPI->ullTimeStamp2;
 				if (psTimeStamp->i32GPUloading) {
@@ -1409,11 +1424,11 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 						, 1); /* fallback mode */
 				last_3D_done = cur_3D_done;
 
-				if (gx_game_mode)
+				if (!g_force_gpu_dvfs_fallback)
 					ged_set_backup_timer_timeout(0);
 				else
 					ged_set_backup_timer_timeout(
-						psKPI->t_gpu_target);
+						psKPI->t_gpu_target << 1);
 #endif
 
 				if (psHead->last_TimeStamp1 != psKPI->ullTimeStamp1) {
@@ -1440,12 +1455,10 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 				}
 				ged_kpi_output_gfx_info(psHead->t_gpu_latest
 					, psKPI->gpu_freq * 1000
-					, mt_gpufreq_get_freq_by_idx(
-					mt_gpufreq_get_cur_ceiling_idx()));
+					, psKPI->gpu_freq_max * 1000);
 				ged_kpi_output_gfx_info2(psHead->t_gpu_latest
 					, psKPI->gpu_freq * 1000
-					, mt_gpufreq_get_freq_by_idx(
-					mt_gpufreq_get_cur_ceiling_idx())
+					, psKPI->gpu_freq_max * 1000
 					, ulID);
 				if (psKPI &&
 					(psKPI->ulMask & GED_TIMESTAMP_TYPE_S))
@@ -1497,13 +1510,14 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 					psKPI->ullTimeStamp1;
 				ged_log_perf_trace_counter("t_pre_fence_delay",
 				pre_fence_delay, psTimeStamp->pid,
-				psTimeStamp->i32FrameID);
+				psTimeStamp->i32FrameID, ulID);
 				psKPI->ulMask |= GED_TIMESTAMP_TYPE_P;
 				psKPI->ullTimeStampP =
 					psTimeStamp->ullTimeStamp;
 			} else {
 				ged_log_perf_trace_counter("t_pre_fence_delay",
-				0, psTimeStamp->pid, psTimeStamp->i32FrameID);
+				0, psTimeStamp->pid, psTimeStamp->i32FrameID
+				, ulID);
 #ifdef GED_KPI_DEBUG
 				GED_LOGE(
 		"[GED_KPI][Exception] TYPE_P: psKPI NULL, frameID: %lu\n",

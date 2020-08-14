@@ -17,7 +17,6 @@
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 /* #include "wmt_tm.h" */
-#include <linux/platform_data/mtk_thermal.h>
 #include "mt-plat/mtk_thermal_monitor.h"
 #include <linux/timer.h>
 #include <linux/pid.h>
@@ -26,6 +25,10 @@
 #include <linux/uidgid.h>
 /* For using net dev - */
 #include <mt-plat/mtk_wcn_cmb_stub.h>
+
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
+#include <linux/thermal_framework.h>
+#endif
 
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 #include <linux/sign_of_life.h>
@@ -38,9 +41,6 @@
 
 static kuid_t uid = KUIDT_INIT(0);
 static kgid_t gid = KGIDT_INIT(1000);
-
-wmt_get_temp wifi_get_temp;
-EXPORT_SYMBOL(wifi_get_temp);
 
 static int wmt_tm_debug_log;
 #define wmt_tm_dprintk(fmt, args...)   \
@@ -419,9 +419,7 @@ int wmt_thz_hw_get_temp(void)
 	int temp = 0;
 
 #ifndef CONFIG_MTK_COMBO_CHIP_MT76x2
-	if(wifi_get_temp)
-		temp = wifi_get_temp();
-
+	temp = mtk_wcn_cmb_stub_query_ctrl();
 #endif /* CONFIG_MTK_COMBO_CHIP_MT76x2 */
 	if (temp >= 255)	/* dummy values */
 		temp = -127;
@@ -442,8 +440,7 @@ static int wmt_thz_get_temp(struct thermal_zone_device *thz_dev, int *pv)
 		/* p_des = &pg_wmt_tm->wmt_if.ops; */
 		/* temp = p_des->query_temp(); */
 #ifndef CONFIG_MTK_COMBO_CHIP_MT76x2
-		if(wifi_get_temp)
-			temp = wifi_get_temp();
+		temp = mtk_wcn_cmb_stub_query_ctrl();
 #endif /* CONFIG_MTK_COMBO_CHIP_MT76x2 */
 		if (temp >= 255)	/* dummy values */
 			temp = -127;
@@ -561,15 +558,9 @@ static int mtktswmt_thermal_notify(struct thermal_zone_device *thermal,
 	char buf[TSWMT_METRICS_STR_LEN];
 #endif
 
-	if (type == THERMAL_TRIP_CRITICAL) {
-		pr_err("%s: thermal_shutdown notify\n", __func__);
-		last_kmsg_thermal_shutdown();
-		pr_err("%s: thermal_shutdown notify end\n", __func__);
-	}
-
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 	if (type == THERMAL_TRIP_CRITICAL) {
-		wmt_tm_printk(
+		pr_err(
 			"[%s] Thermal shutdown WiFi, temp=%d, trip=%d\n",
 			__func__, thermal->temperature, trip);
 		life_cycle_set_thermal_shutdown_reason(
@@ -577,13 +568,21 @@ static int mtktswmt_thermal_notify(struct thermal_zone_device *thermal,
 	}
 #endif
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
 	if (type == THERMAL_TRIP_CRITICAL) {
+		pr_err("%s: thermal_shutdown notify\n", __func__);
+		last_kmsg_thermal_shutdown();
+		pr_err("%s: thermal_shutdown notify end\n", __func__);
+	}
+#endif
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	if (type == THERMAL_TRIP_CRITICAL &&
 		snprintf(buf, TSWMT_METRICS_STR_LEN,
 			"%s:tswmtmonitor;CT;1,temp=%d;trip=%d;CT;1:NR",
-			PREFIX, thermal->temperature, trip);
+			PREFIX, thermal->temperature, trip) > 0)
 		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-	}
+
 #endif
 
 	return 0;
@@ -613,7 +612,10 @@ static int wmt_cl_set_cur_state(struct thermal_cooling_device *cool_dev,
 	cl_dev_state = v;
 
 	if (cl_dev_state == 1) {
-		wmt_tm_printk("wmt_cl_set_cur_state = 1\n");
+		pr_err("wmt_cl_set_cur_state = 1\n");
+		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+		pr_err("*****************************************");
+		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
 
 #ifdef CONFIG_AMAZON_SIGN_OF_LIFE
 		life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_WIFI);
@@ -938,9 +940,9 @@ static int wmt_cl_pa1_set_cur_state(struct thermal_cooling_device *cool_dev,
 
 	cl_pa1_dev_state = (unsigned int)v;
 
-	if (cl_pa1_dev_state == 1)
+	if (cl_pa1_dev_state == 1 && ret == 0)
 		ret = wmt_judge_throttling(0, 1, p_linux_if->interval / 1000);
-	else
+	else if (ret == 0)
 		ret = wmt_judge_throttling(0, 0, p_linux_if->interval / 1000);
 	if (ret != 0)
 		wmt_tm_info("[%s] ret=%d\n", __func__, ret);
@@ -977,7 +979,7 @@ static int wmt_cl_pa2_set_cur_state(struct thermal_cooling_device *cool_dev,
 	if (pg_wmt_tm)
 		p_linux_if = &pg_wmt_tm->linux_if;
 	else
-		ret = -1;
+		return -1;
 
 	cl_pa2_dev_state = (unsigned int)v;
 
@@ -1326,6 +1328,8 @@ static ssize_t wmt_tm_write(struct file *filp,
 			mtk_thermal_zone_device_unregister(p_linux_if->thz_dev);
 			p_linux_if->thz_dev = NULL;
 		}
+		if (g_num_trip < 0 || g_num_trip > 10)
+			return -EINVAL;
 
 		for (i = 0; i < g_num_trip; i++)
 			g_thermal_trip[i] = thermal_trip[i];

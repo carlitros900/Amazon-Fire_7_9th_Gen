@@ -1912,10 +1912,8 @@ static void fts_fwupg_work(struct work_struct *work)
         of_property_read_string(root, "version", &version);
     }
 
-    if (!!strcmp("evt", version) &&
-	!!strcmp("evt_1_1", version) &&
-	!!strcmp("dvt", version)) {
-        FTS_INFO("Firmware upgrade is not enabled on this build config");
+    if (!!strcmp("evt",version)) {
+        FTS_INFO("Not EVT DTS, not upgrade when power on");
         return;
     }
 

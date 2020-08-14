@@ -119,11 +119,12 @@ int setMaxbrightness(int max_level, int enable)
 		limit = max_level;
 		thermal_limit = max_level;
 		mutex_unlock(&bl_level_limit_mutex);
+
+		printk_ratelimited(KERN_WARNING "[%s]: limit=%d, last_level=%d\n",
+						__func__, limit, last_level);
 		/* if (limit < last_level){ */
 		if (current_level != 0) {
 			if (limit < last_level) {
-				LEDS_DRV_DEBUG
-				    ("setMaxbrightness: limit=%d\n", limit);
 				mt65xx_led_set_cust(&cust_led_list
 						    [MT65XX_LED_TYPE_LCD],
 						    limit);
@@ -140,7 +141,7 @@ int setMaxbrightness(int max_level, int enable)
 		mutex_unlock(&bl_level_limit_mutex);
 
 		if (current_level != 0) {
-			LEDS_DRV_DEBUG("control temperature close:limit=%d\n",
+			printk_ratelimited(KERN_INFO "control temperature close:limit=%d\n",
 				       limit);
 			mt65xx_led_set_cust(&cust_led_list[MT65XX_LED_TYPE_LCD],
 					    last_level);

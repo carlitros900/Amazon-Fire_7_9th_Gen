@@ -2192,23 +2192,12 @@ static struct snd_soc_dai_driver tlv320aic3101_dai_driver[] = {
 }
 };
 
-static void aic31xx_parse_dt_mode(struct i2c_client *pdev, struct aic31xx_priv *aic31)
-{
-    int ret = 0;
-
-    ret = of_property_read_u32(pdev->dev.of_node, "disable_reset", &aic31->disable_reset);
-    if (ret < 0) {
-        aic31->disable_reset = 0;
-        dev_err(&pdev->dev, "Failed to parse dts adc disable_reset mode\n");
-    }
-}
-
 static int aic31xx_i2c_probe(struct i2c_client *pdev,
 			     const struct i2c_device_id *id)
 {
 	int ret = 0;
 	struct aic31xx_priv *aic31xx;
-	int enable_gpio = 0;
+	int enable_gpio;
 
 	static struct aic31xx_priv *aic31xx_global;
 	static int i;
@@ -2247,58 +2236,50 @@ static int aic31xx_i2c_probe(struct i2c_client *pdev,
 			return PTR_ERR(aic31xx->mclk);
 		}
 
-		aic31xx_parse_dt_mode(pdev, aic31xx);
-
 #ifdef CONFIG_ACPI
 		if (!ACPI_HANDLE(&pdev->dev)) {
 			dev_err(&pdev_dev, "Not a valid ACPI device\n");
 			return -EINVAL;
 		}
-
-		if (!aic31xx->disable_reset) {
-			aic31xx->enable_gpiod =
-				devm_gpiod_get_index(&pdev->dev, "aic3101_enable",
-							0);
-			if (IS_ERR_OR_NULL(aic31xx->enable_gpiod)) {
-				dev_err(&pdev->dev, "Failed to get enable gpio!\n");
-				return -EINVAL;
-			}
+		aic31xx->enable_gpiod =
+			devm_gpiod_get_index(&pdev->dev, "aic3101_enable",
+					     0);
+		if (IS_ERR_OR_NULL(aic31xx->enable_gpiod)) {
+			dev_err(&pdev->dev, "Failed to get enable gpio!\n");
+			return -EINVAL;
 		}
-#else
-		if (!aic31xx->disable_reset) {
-			enable_gpio = of_get_named_gpio(pdev->dev.of_node, "enable-gpio", 0);
-			if (enable_gpio < 0) {
-				dev_err(&pdev->dev, "Failed to get enable gpio from device tree!\n");
-				return -EINVAL;
-			}
 
-			ret = devm_gpio_request_one(&pdev->dev, enable_gpio, 0, "aic3101_enable");
-			if (ret < 0) {
-				dev_err(&pdev->dev, "Failed to request enable gpio! %d\n", ret);
-				return -EINVAL;
-			}
+#else
+		enable_gpio = of_get_named_gpio(pdev->dev.of_node, "enable-gpio", 0);
+		if (enable_gpio < 0) {
+			dev_err(&pdev->dev, "Failed to get enable gpio from device tree!\n");
+			return -EINVAL;
+		}
+
+		ret = devm_gpio_request_one(&pdev->dev, enable_gpio, 0, "aic3101_enable");
+		if (ret < 0) {
+			dev_err(&pdev->dev, "Failed to request enable gpio! %d\n", ret);
+			return -EINVAL;
 		}
 
 		aic31xx->enable_gpiod = gpio_to_desc(enable_gpio);
 #endif
-		if (!aic31xx->disable_reset) {
-			/* Reset ADC */
-			ret = gpiod_direction_output(aic31xx->enable_gpiod, 0);
-			if (ret < 0) {
-				dev_err(&pdev->dev,
-					"could not set gpio(%d) to 0 (err=%d)\n",
-					enable_gpio, ret);
-				return -EINVAL;
-			}
-			/* Hold it down for required time */
-			mdelay(RESET_LINE_DELAY);
-			ret = gpiod_direction_output(aic31xx->enable_gpiod, 1);
-			if (ret < 0) {
-				dev_err(&pdev->dev,
-					"could not set gpio(%d) to 1 (err=%d)\n",
-					enable_gpio, ret);
-				return -EINVAL;
-			}
+		/* Reset ADC */
+		ret = gpiod_direction_output(aic31xx->enable_gpiod, 0);
+		if (ret < 0) {
+			dev_err(&pdev->dev,
+				"could not set gpio(%d) to 0 (err=%d)\n",
+				enable_gpio, ret);
+			return -EINVAL;
+		}
+		/* Hold it down for required time */
+		mdelay(RESET_LINE_DELAY);
+		ret = gpiod_direction_output(aic31xx->enable_gpiod, 1);
+		if (ret < 0) {
+			dev_err(&pdev->dev,
+				"could not set gpio(%d) to 1 (err=%d)\n",
+				enable_gpio, ret);
+			return -EINVAL;
 		}
 	} else {
 		if (i >= 0 && i < NUM_ADC3101)

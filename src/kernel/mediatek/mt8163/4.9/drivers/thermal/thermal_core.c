@@ -245,7 +245,8 @@ int get_tz_trend(struct thermal_zone_device *tz, int trip)
 {
 	enum thermal_trend trend;
 
-	if (!tz->ops->get_trend || tz->ops->get_trend(tz, trip, &trend)) {
+	if (tz->emul_temperature || !tz->ops->get_trend ||
+	    tz->ops->get_trend(tz, trip, &trend)) {
 		if (tz->temperature > tz->last_temperature)
 			trend = THERMAL_TREND_RAISING;
 		else if (tz->temperature < tz->last_temperature)
@@ -763,10 +764,7 @@ trips_store(struct device *dev, struct device_attribute *attr,
 	unbind_all_tz(tz);
 	mutex_lock(&tz->lock);
 	mask = (1 << ntrip) - 1;
-	if (tz->ops->set_ntrips) {
-		tz->ops->set_ntrips(tz, ntrip);
-	}
-	tz->trips = ntrip;
+	of_thermal_set_ntrips(tz, ntrip);
 	create_trip_attrs(tz, mask);
 	mutex_unlock(&tz->lock);
 	return count;

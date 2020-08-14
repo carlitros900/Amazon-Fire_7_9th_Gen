@@ -209,8 +209,11 @@ err2:
 
 void ion_buffer_destroy(struct ion_buffer *buffer)
 {
-	if (WARN_ON(buffer->kmap_cnt > 0))
+	if (buffer->kmap_cnt > 0) {
+		pr_warn_once("%s: buffer still mapped in the kernel\n",
+			     __func__);
 		buffer->heap->ops->unmap_kernel(buffer->heap, buffer);
+	}
 	buffer->heap->ops->free(buffer);
 	vfree(buffer->pages);
 	kfree(buffer);
@@ -699,12 +702,21 @@ static int ion_debug_client_show(struct seq_file *s, void *unused)
 
 	names = kcalloc(ION_NUM_HEAP_IDS, sizeof(char *), GFP_ATOMIC);
 
-	if (!names)
+	if (!names) {
+		kfree(sizes);
 		return -ENOMEM;
+	}
 
-	down_read(&dev->lock);
+	if (!down_read_trylock(&dev->lock)) {
+		pr_notice("%s get lock fail\n", __func__);
+		kfree(sizes);
+		kfree(names);
+		return 0;
+	}
 	if (!ion_client_validate(dev, client)) {
-		IONMSG("%s: client is invlaid.\n", __func__);
+		seq_printf(s, "ion_client 0x%pK dead, can't dump its buffers\n",
+			   client);
+		IONMSG("%s:client invalid\n", __func__);
 		up_read(&dev->lock);
 		kfree(sizes);
 		kfree(names);
@@ -875,20 +887,18 @@ void ion_client_destroy(struct ion_client *client)
 	struct rb_node *n;
 
 	pr_debug("%s: %d\n", __func__, __LINE__);
+
 	while ((n = rb_first(&client->handles))) {
 		struct ion_handle *handle = rb_entry(n, struct ion_handle,
 						     node);
 
 		mutex_lock(&client->lock);
-		IONMSG("%s:hdl=%p,buf=%p,sz=%zu,ref=%d,kmp=%d\n",
+		IONMSG("%s:hdl=%p,buf=%p,ref=%d,kmp=%d,clnt=%s,dbg=%s\n",
 		       __func__, handle, handle->buffer,
-		       handle->buffer->size,
 		       atomic_read(&handle->buffer->ref.refcount),
-		       handle->buffer->kmap_cnt);
-		IONMSG("%s:client=%s,disp=%s,dbg=%s\n",
-		       __func__, client->name ? client->name : NULL,
-		       client->display_name ? client->display_name : NULL,
-		       client->dbg_name ? client->dbg_name : NULL);
+		       handle->buffer->kmap_cnt,
+		       client->name ? client->name : NULL,
+		       client->dbg_name);
 		ion_handle_destroy(&handle->ref);
 		mutex_unlock(&client->lock);
 	}
@@ -957,9 +967,6 @@ static void ion_buffer_sync_for_device(struct ion_buffer *buffer,
 	int pages = PAGE_ALIGN(buffer->size) / PAGE_SIZE;
 	int i;
 
-	pr_debug("%s: syncing for device %s\n", __func__,
-		 dev ? dev_name(dev) : "null");
-
 	if (!ion_buffer_fault_user_mappings(buffer))
 		return;
 
@@ -1018,7 +1025,6 @@ static void ion_vm_open(struct vm_area_struct *vma)
 	mutex_lock(&buffer->lock);
 	list_add(&vma_list->list, &buffer->vmas);
 	mutex_unlock(&buffer->lock);
-	pr_debug("%s: adding %p\n", __func__, vma);
 }
 
 static void ion_vm_close(struct vm_area_struct *vma)
@@ -1026,14 +1032,12 @@ static void ion_vm_close(struct vm_area_struct *vma)
 	struct ion_buffer *buffer = vma->vm_private_data;
 	struct ion_vma_list *vma_list, *tmp;
 
-	pr_debug("%s\n", __func__);
 	mutex_lock(&buffer->lock);
 	list_for_each_entry_safe(vma_list, tmp, &buffer->vmas, list) {
 		if (vma_list->vma != vma)
 			continue;
 		list_del(&vma_list->list);
 		kfree(vma_list);
-		pr_debug("%s: deleting %p\n", __func__, vma);
 		break;
 	}
 	mutex_unlock(&buffer->lock);
@@ -1365,7 +1369,6 @@ static int ion_release(struct inode *inode, struct file *file)
 {
 	struct ion_client *client = file->private_data;
 
-	pr_debug("%s: %d\n", __func__, __LINE__);
 	ion_client_destroy(client);
 	return 0;
 }
@@ -1378,7 +1381,6 @@ static int ion_open(struct inode *inode, struct file *file)
 	char debug_name[64];
 	unsigned long long start, end;
 
-	pr_debug("%s: %d\n", __func__, __LINE__);
 	snprintf(debug_name, 64, "%u", task_pid_nr(current->group_leader));
 	start = sched_clock();
 	client = ion_client_create(dev, debug_name);

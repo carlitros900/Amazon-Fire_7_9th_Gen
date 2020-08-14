@@ -119,8 +119,10 @@ static int mtktscpu_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	cpu_params = devm_kzalloc(&pdev->dev, sizeof(*cpu_params), GFP_KERNEL);
-	if (!cpu_params)
+	if (!cpu_params) {
+		kfree(virtual_sensor);
 		return -ENOMEM;
+	}
 
 	mutex_init(&virtual_sensor->sensor_mutex);
 	virtual_sensor->dev = &pdev->dev;

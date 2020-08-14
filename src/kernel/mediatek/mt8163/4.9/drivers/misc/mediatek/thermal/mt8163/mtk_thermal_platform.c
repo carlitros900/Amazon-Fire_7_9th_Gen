@@ -104,7 +104,7 @@ static int get_sys_battery_info(char *dev)
 	long nRet;
 	int eCheck;
 	int nReadSize;
-	char buf[64];
+	char buf[64] = { 0 };
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
@@ -117,6 +117,7 @@ static int get_sys_battery_info(char *dev)
 		return fd;
 	}
 
+	memset(buf, 0, sizeof(buf));
 	nReadSize = sys_read(fd, buf, sizeof(buf) - 1);
 	THRML_LOG("[get_sys_battery_info] nReadSize:%d\n", nReadSize);
 	eCheck = kstrtol(buf, 10, &nRet);
@@ -140,7 +141,7 @@ static int get_sys_wifi_throughput(char *dev, int nRetryNr)
 	int eCheck;
 	int nReadSize;
 	int nRetryCnt = 0;
-	char buf[64];
+	char buf[64] = { 0 };
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
@@ -163,7 +164,7 @@ static int get_sys_wifi_throughput(char *dev, int nRetryNr)
 			"[get_sys_wifi_throughput] open fail nRetryCnt:%d\n",
 			nRetryCnt);
 
-
+	memset(buf, 0, sizeof(buf));
 	nReadSize = sys_read(fd, buf, sizeof(buf) - 1);
 	THRML_LOG("[get_sys_wifi_throughput] nReadSize:%d\n", nReadSize);
 	eCheck = kstrtol(buf, 10, &nRet);

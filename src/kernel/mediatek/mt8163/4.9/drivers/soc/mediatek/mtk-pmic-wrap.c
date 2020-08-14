@@ -897,7 +897,7 @@ static bool pwrap_is_pmic_cipher_ready(struct pmic_wrapper *wrp)
 static int pwrap_init_cipher(struct pmic_wrapper *wrp)
 {
 	int ret;
-	u32 rdata;
+	u32 rdata = 0;
 
 	pwrap_writel(wrp, 0x1, PWRAP_CIPHER_SWRST);
 	pwrap_writel(wrp, 0x0, PWRAP_CIPHER_SWRST);
@@ -1292,6 +1292,11 @@ static int pwrap_probe(struct platform_device *pdev)
 		of_match_device(of_pwrap_match_tbl, &pdev->dev);
 	const struct of_device_id *of_slave_id = NULL;
 	struct resource *res;
+
+	if (!of_id) {
+		dev_dbg(&pdev->dev, "pwrap should be defined in dts\n");
+		return -EINVAL;
+	}
 
 	if (pdev->dev.of_node->child)
 		of_slave_id = of_match_node(of_slave_match_tbl,

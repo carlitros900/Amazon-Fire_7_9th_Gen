@@ -232,7 +232,7 @@ void cmdq_dev_get_module_clock_by_name(const char *name, const char *clkName,
 		CMDQ_ERR("DEV: byName: cannot get module clock: %s\n", clkName);
 	} else {
 		/* message print */
-		CMDQ_MSG("DEV: byName: get module clock: %s\n", clkName);
+		CMDQ_ERR("DEV: byName: get module clock: %s\n", clkName);
 	}
 }
 
@@ -305,6 +305,7 @@ IMP_ENABLE_HW_CLOCK(SMI_LARB0, SMI_LARB0);
 void cmdq_dev_init_module_clk(void)
 {
 #if defined(CMDQ_OF_SUPPORT) && defined(CMDQ_USE_CCF)
+	CMDQ_ERR("harry init cmdq_dev_clock\n");
 	cmdq_dev_get_module_clock_by_name("mediatek,smi_common", "smi-common",
 					  &gCmdqModuleClock.clk_SMI_COMMON);
 	cmdq_dev_get_module_clock_by_name("mediatek,smi_common", "smi-larb0",
@@ -666,6 +667,7 @@ void cmdq_dev_init(struct platform_device *pDevice)
 	/* init module VA */
 	cmdq_dev_init_module_base_VA();
 	/* init module clock */
+	CMDQ_ERR("harry cmdq init\n");
 	cmdq_dev_init_module_clk();
 	/* init module PA for instruction count */
 	cmdq_get_func()->initModulePAStat();

@@ -46,6 +46,8 @@
 			cpu-release-addr = <0x0 0x40000200>;
 			clock-frequency = <1300000000>;
 			#cooling-cells = <2>;
+			sched-energy-costs = <&MT8163_CPU_COST_0
+					      &MT8163_CLUSTER_COST_0>;
 		};
 
 		cpu1: cpu@1 {
@@ -58,6 +60,8 @@
 					  <&CPU_SLEEP_0_0 &CPU_SLEEP_0_0 &CPU_SLEEP_0_0>;
 			cpu-release-addr = <0x0 0x40000200>;
 			clock-frequency = <1300000000>;
+			sched-energy-costs = <&MT8163_CPU_COST_0
+					      &MT8163_CLUSTER_COST_0>;
 		};
 
 		cpu2: cpu@2 {
@@ -70,6 +74,8 @@
 					  <&CPU_SLEEP_0_0 &CPU_SLEEP_0_0 &CPU_SLEEP_0_0>;
 			cpu-release-addr = <0x0 0x40000200>;
 			clock-frequency = <1300000000>;
+			sched-energy-costs = <&MT8163_CPU_COST_0
+					      &MT8163_CLUSTER_COST_0>;
 		};
 
 		cpu3: cpu@3 {
@@ -82,6 +88,8 @@
 					  <&CPU_SLEEP_0_0 &CPU_SLEEP_0_0 &CPU_SLEEP_0_0>;
 			cpu-release-addr = <0x0 0x40000200>;
 			clock-frequency = <1300000000>;
+			sched-energy-costs = <&MT8163_CPU_COST_0
+					      &MT8163_CLUSTER_COST_0>;
 		};
 
 		cpu-map {
@@ -124,6 +132,8 @@
 				min-residency-us = <2000>;
 			};
 		};
+
+		/include/ "mt8163-sched-energy.dtsi"
 	};
 
 	memory {
@@ -169,6 +179,11 @@
 			reg = <0 0x4bd00000 0 0x300000>;
 		};
 
+		secure_carveout: secure-carveout {
+			compatible = "shared-secure-pool";
+			reusable;
+			size = <0 0>;
+		};
 	};
 
 	psci {

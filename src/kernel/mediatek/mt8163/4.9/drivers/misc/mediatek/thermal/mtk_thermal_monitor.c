@@ -1311,6 +1311,10 @@ static int mtk_thermal_wrapper_bind
 	 * so don't rollback cooler's devdata in this bind...
 	 */
 
+	if(strncmp(cdev->type, "mtk", 3) &&
+		strncmp(cdev->type, "cpu", 3))
+		return 0;
+
 #if MTK_THERMAL_MONITOR_CONDITIONAL_COOLING
 	{
 		int i = 0;
@@ -1377,6 +1381,9 @@ static int mtk_thermal_wrapper_unbind
 	int ret = 0;
 	struct thermal_zone_device_ops *ops;
 
+	if(strncmp(cdev->type, "mtk", 3) &&
+		strncmp(cdev->type, "cpu", 3))
+		return 0;
 #if MTK_THERMAL_MONITOR_CONDITIONAL_COOLING
 	{
 		int i = 0;

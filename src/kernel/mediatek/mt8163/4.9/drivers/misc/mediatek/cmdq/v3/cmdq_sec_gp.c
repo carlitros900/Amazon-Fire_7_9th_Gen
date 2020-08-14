@@ -32,19 +32,25 @@ s32 cmdq_sec_init_context(struct cmdq_sec_tee_context *tee)
 {
 	s32 status;
 
+	CMDQ_MSG("[SEC] enter %s\n", __func__);
 #if defined(CONFIG_MICROTRUST_TEE_SUPPORT)
 	while (!is_teei_ready()) {
-		CMDQ_MSG("[SEC]TEE is not ready, wait...\n");
+		CMDQ_MSG("[SEC] Microtrust TEE is not ready, wait...\n");
 		msleep(1000);
 	}
-	CMDQ_LOG("[SEC]TEE is ready\n");
+#elif defined(CONFIG_TRUSTONIC_TEE_SUPPORT)
+	while (!is_mobicore_ready()) {
+		CMDQ_MSG("[SEC] Trustonic TEE is not ready, wait...\n");
+		msleep(1000);
+	}
 #endif
+	CMDQ_LOG("[SEC]TEE is ready\n");
 
 	status = TEEC_InitializeContext(UUID_STR, &tee->gp_context);
 	if (status != TEEC_SUCCESS)
 		CMDQ_ERR("[SEC]init_context fail: status:0x%x\n", status);
 	else
-		CMDQ_LOG("[SEC]init_context: status:0x%x\n", status);
+		CMDQ_MSG("[SEC]init_context: status:0x%x\n", status);
 	return status;
 }
 
@@ -62,8 +68,9 @@ s32 cmdq_sec_allocate_wsm(struct cmdq_sec_tee_context *tee,
 	if (!wsm_buffer)
 		return -EINVAL;
 
+	CMDQ_MSG("enter %s, tee=%p, size=%d\n", __func__, tee, size);
 	tee->shared_mem.size = size;
-	tee->shared_mem.flags = TEEC_MEM_INPUT;
+	tee->shared_mem.flags = TEEC_MEM_INPUT | TEEC_MEM_OUTPUT;
 	status = TEEC_AllocateSharedMemory(&tee->gp_context,
 		&tee->shared_mem);
 	if (status != TEEC_SUCCESS) {
@@ -128,10 +135,10 @@ s32 cmdq_sec_execute_session(struct cmdq_sec_tee_context *tee,
 
 	memset(&operation, 0, sizeof(struct TEEC_Operation));
 #if defined(CONFIG_TRUSTONIC_TEE_SUPPORT)
-	operation.param_types = TEEC_PARAM_TYPES(TEEC_MEMREF_PARTIAL_INPUT,
+	operation.param_types = TEEC_PARAM_TYPES(TEEC_MEMREF_PARTIAL_INOUT,
 		TEEC_NONE, TEEC_NONE, TEEC_NONE);
 #else
-	operation.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_PARTIAL_INPUT,
+	operation.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_PARTIAL_INOUT,
 		TEEC_NONE, TEEC_NONE, TEEC_NONE);
 #endif
 	operation.params[0].memref.parent = &tee->shared_mem;

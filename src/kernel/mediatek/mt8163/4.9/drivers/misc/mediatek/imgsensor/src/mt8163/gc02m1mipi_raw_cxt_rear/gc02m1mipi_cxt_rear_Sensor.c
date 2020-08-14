@@ -297,7 +297,7 @@ static kal_uint16 set_gain(kal_uint16 gain)
 
 	reg_gain = gain2reg(gain);
 
-	for (gain_index = GC02M1_SENSOR_GAIN_MAX_VALID_INDEX - 1; gain_index >= 0; gain_index--)
+	for (gain_index = GC02M1_SENSOR_GAIN_MAX_VALID_INDEX - 1; gain_index > 0; gain_index--)
 		if (reg_gain >= GC02M1_AGC_Param[gain_index][0])
 			break;
 
@@ -610,6 +610,9 @@ static kal_uint32 get_imgsensor_id(UINT32 *sensor_id)
 		spin_unlock(&imgsensor_drv_lock);
 		do {
 			*sensor_id = return_sensor_id();
+
+			LOG_INF("chip id: 0x%x, custom sensor id: 0x%x\n", imgsensor_info.sensor_id, *sensor_id);
+
 			if (*sensor_id == imgsensor_info.sensor_id) {
 				LOG_INF("i2c write id: 0x%x, sensor id: 0x%x\n", imgsensor.i2c_write_id, *sensor_id);
 				return ERROR_NONE;
@@ -1132,6 +1135,10 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 		break;
 	case SENSOR_FEATURE_GET_TEST_PATTERN_CHECKSUM_VALUE:
 		*feature_return_para_32 = imgsensor_info.checksum_value;
+		*feature_para_len = 4;
+		break;
+	case SENSOR_FEATURE_GET_SENSOR_ID:
+		*feature_return_para_32 = imgsensor_info.sensor_id;
 		*feature_para_len = 4;
 		break;
 	case SENSOR_FEATURE_SET_FRAMERATE:

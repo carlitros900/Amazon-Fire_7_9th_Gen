@@ -1610,9 +1610,12 @@ static int hang_detect_warn_thread(void *arg)
 	};
 
 	char string_tmp[30];
+	int n;
 
 	sched_setscheduler(current, SCHED_FIFO, &param);
-	snprintf(string_tmp, 30, "hang_detect:[pid:%d]\n", system_server_pid);
+	n = snprintf(string_tmp, 30, "hang_detect:[pid:%d]\n", system_server_pid);
+	if(n < 0)
+		strncpy(string_tmp, "hang_detect unknown error", 26);
 	pr_notice("hang_detect create warning api: %s.", string_tmp);
 #ifdef __aarch64__
 		aee_kernel_warning_api(__FILE__, __LINE__,

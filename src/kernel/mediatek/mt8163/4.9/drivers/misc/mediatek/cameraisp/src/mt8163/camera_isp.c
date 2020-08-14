@@ -6980,7 +6980,8 @@ static signed int ISP_suspend(struct platform_device *pDev, pm_message_t Mesg)
 		return -EBUSY;
 	}
 	if (atomic_read(&g_EnableClkCnt) > 0)
-		LOG_WRN("g_EnableClkCnt %d", atomic_read(&g_EnableClkCnt));
+		LOG_ERR("FORCE to release for suspend, g_EnableClkCnt %d is still hold",
+				atomic_read(&g_EnableClkCnt));
 	/* disable clock for g_EnableClkCnt times */
 	while (atomic_read(&g_EnableClkCnt) > 0) {
 #ifdef CONFIG_MTK_CLKMGR

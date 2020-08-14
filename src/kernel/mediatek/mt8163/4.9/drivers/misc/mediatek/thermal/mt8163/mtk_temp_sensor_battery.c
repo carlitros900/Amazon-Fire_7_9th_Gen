@@ -119,8 +119,10 @@ static int mtktsbattery_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	battery_params = devm_kzalloc(&pdev->dev, sizeof(*battery_params), GFP_KERNEL);
-	if (!battery_params)
+	if (!battery_params) {
+		kfree(virtual_sensor);
 		return -ENOMEM;
+	}
 
 	mutex_init(&virtual_sensor->sensor_mutex);
 	virtual_sensor->dev = &pdev->dev;

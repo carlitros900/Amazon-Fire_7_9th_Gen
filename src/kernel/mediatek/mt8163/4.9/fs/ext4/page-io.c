@@ -24,9 +24,6 @@
 #include <linux/slab.h>
 #include <linux/mm.h>
 #include <linux/backing-dev.h>
-#include <linux/fscrypto.h>
-#include <linux/blk_types.h>
-#include <linux/hie.h>
 
 #include "ext4_jbd2.h"
 #include "xattr.h"
@@ -517,11 +514,8 @@ int ext4_bio_write_page_crypt(struct ext4_io_submit *io,
 		gfp_t gfp_flags = GFP_NOFS;
 
 	retry_encrypt:
-		if (fscrypt_using_hardware_encryption(inode))
-			io->io_crypt_inode = inode;
-		else
-			data_page =
-			fscrypt_encrypt_page(inode, page, gfp_flags);
+		data_page = fscrypt_encrypt_page(inode, page, PAGE_SIZE, 0,
+						page->index, gfp_flags);
 		if (IS_ERR(data_page)) {
 			ret = PTR_ERR(data_page);
 			if (ret == -ENOMEM && wbc->sync_mode == WB_SYNC_ALL) {

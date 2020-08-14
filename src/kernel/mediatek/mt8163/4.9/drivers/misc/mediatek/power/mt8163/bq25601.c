@@ -695,7 +695,7 @@ static ssize_t show_dump_register(struct device *dev,
 		val = 0;
 		bq25601_read_byte(i, &val);
 		sprintf(temp_info, "reg[%x]=0x%x\n", i, val);
-		strcat(buf, temp_info);
+		strncat(buf, temp_info, strlen(temp_info));
 	}
 	return strlen(buf);
 }

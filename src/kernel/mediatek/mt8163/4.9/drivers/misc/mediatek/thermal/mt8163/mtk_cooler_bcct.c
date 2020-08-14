@@ -184,7 +184,8 @@ static int mtk_cooler_bcct_register_ltf(void)
 	for (i = MAX_NUM_INSTANCE_MTK_COOLER_BCCT; i-- > 0;) {
 		char temp[20] = { 0 };
 
-		sprintf(temp, "mtk-cl-bcct%02d", i);
+		if (sprintf(temp, "mtk-cl-bcct%02d", i) <= 0)
+			return -1;
 		/* put bcct state to cooler devdata */
 		cl_bcct_dev[i] =
 		mtk_thermal_cooling_device_register(temp,
@@ -325,9 +326,6 @@ static ssize_t _cl_bcct_write(struct file *filp,
 
 	len = (len < (128-1)) ? len : (128-1);
 
-	/* write data to the buffer */
-	if (len > 127)
-		len = 127;
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;
 

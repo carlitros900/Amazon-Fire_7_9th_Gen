@@ -49,6 +49,12 @@ define fixup-kernel-cmd-file
 if [ -e $(1) ]; then cp $(1) $(1).bak; sed -e 's/\\\\\\\\/\\\\/g' < $(1).bak > $(1); rm -f $(1).bak; fi
 endef
 
+ifneq ($(strip $(BOARD_AMAZON_SYSTEM_VERITY_PUBK)),)
+ifeq ($(wildcard $(BOARD_AMAZON_SYSTEM_VERITY_PUBK)),)
+$(error defined BOARD_AMAZON_SYSTEM_VERITY_PUBK: $(BOARD_AMAZON_SYSTEM_VERITY_PUBK), but file not exist)
+endif
+endif
+
 ifneq ($(strip $(TARGET_NO_KERNEL)),true)
     KERNEL_DIR := $(LOCAL_PATH)
     BUILT_SYSTEMIMAGE := $(call intermediates-dir-for,PACKAGING,systemimage)/system.img
@@ -88,12 +94,18 @@ ifneq ($(strip $(TARGET_NO_KERNEL)),true)
     KERNEL_MAKE_OPTION := O=$(KERNEL_OUT) ARCH=$(KERNEL_TARGET_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) ROOTDIR=$(KERNEL_ROOT_DIR) $(if $(strip $(SHOW_COMMANDS)),V=1)
 
 # .config cannot be PHONY due to config_data.gz
+ifneq ($(wildcard $(BOARD_AMAZON_SYSTEM_VERITY_PUBK)),)
+$(TARGET_KERNEL_CONFIG): $(BOARD_AMAZON_SYSTEM_VERITY_PUBK)
+endif
 $(TARGET_KERNEL_CONFIG): $(KERNEL_CONFIG_FILE)
 ifneq ($(wildcard $(TARGET_KERNEL_CONFIG)),)
 $(TARGET_KERNEL_CONFIG): $(shell find $(KERNEL_DIR) -name "Kconfig*")
 endif
 	$(hide) mkdir -p $(KERNEL_OUT)
 	$(MAKE) -C $(KERNEL_DIR) $(KERNEL_MAKE_OPTION) $(KERNEL_DEFCONFIG)
+ifneq ($(wildcard $(BOARD_AMAZON_SYSTEM_VERITY_PUBK)),)
+	$(hide) cp $(BOARD_AMAZON_SYSTEM_VERITY_PUBK) $(KERNEL_DIR)/certs/amazon_verity.x509.pem
+endif
 
 $(KERNEL_MODULES_DEPS): $(KERNEL_ZIMAGE_OUT) ;
 

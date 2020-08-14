@@ -29,7 +29,7 @@
 #include "cmdq_sec_iwc_common.h"
 #endif
 
-#ifdef _MTK_USER_
+#ifndef _CMDQ_DEBUG_
 #define DISABLE_LOOP_IRQ
 #endif
 
@@ -206,7 +206,7 @@ int32_t cmdq_append_addr_metadata(cmdqRecHandle handle,
 			"Metadata idx = %d reach the max allowed number = %d.\n",
 			handle->secData.addrMetadataCount, maxMetaDataCount);
 		CMDQ_MSG(
-			"ADDR: type:%d, baseHandle:%x, offset:%d, size:%d, port:%d\n",
+			"ADDR: type:%d, baseHandle:%llx, offset:%d, size:%d, port:%d\n",
 			pMetadata->type, pMetadata->baseHandle,
 			pMetadata->offset, pMetadata->size, pMetadata->port);
 		status = -EFAULT;
@@ -639,7 +639,7 @@ int32_t cmdq_op_write_reg(cmdqRecHandle handle, uint32_t addr,
 
 int32_t cmdq_op_write_reg_secure(cmdqRecHandle handle, uint32_t addr,
 				 enum CMDQ_SEC_ADDR_METADATA_TYPE type,
-				 uint32_t baseHandle, uint32_t offset,
+				 uint64_t baseHandle, uint32_t offset,
 				 uint32_t size, uint32_t port)
 {
 #ifdef CMDQ_SECURE_PATH_SUPPORT
@@ -677,7 +677,7 @@ int32_t cmdq_op_write_reg_secure(cmdqRecHandle handle, uint32_t addr,
 #ifdef CONFIG_MTK_CMDQ_TAB
 int32_t cmdq_op_write_reg_secure_mask(cmdqRecHandle handle, uint32_t addr,
 				      enum CMDQ_SEC_ADDR_METADATA_TYPE type,
-				      uint32_t value, uint32_t mask)
+				      uint64_t value, uint32_t mask)
 {
 #ifdef CMDQ_SECURE_PATH_SUPPORT
 	int32_t status;
@@ -1787,7 +1787,7 @@ int32_t cmdqRecWrite(cmdqRecHandle handle, uint32_t addr, uint32_t value,
 
 int32_t cmdqRecWriteSecure(cmdqRecHandle handle, uint32_t addr,
 			   enum CMDQ_SEC_ADDR_METADATA_TYPE type,
-			   uint32_t baseHandle, uint32_t offset, uint32_t size,
+			   uint64_t baseHandle, uint32_t offset, uint32_t size,
 			   uint32_t port)
 {
 	return cmdq_op_write_reg_secure(handle, addr, type, baseHandle, offset,
@@ -1796,7 +1796,7 @@ int32_t cmdqRecWriteSecure(cmdqRecHandle handle, uint32_t addr,
 
 #ifdef CONFIG_MTK_CMDQ_TAB
 int32_t cmdqRecWriteSecureMask(cmdqRecHandle handle, uint32_t addr,
-	enum CMDQ_SEC_ADDR_METADATA_TYPE type, uint32_t value,
+	enum CMDQ_SEC_ADDR_METADATA_TYPE type, uint64_t value,
 	uint32_t mask)
 {
 	return cmdq_op_write_reg_secure_mask(handle, addr, type, value, mask);

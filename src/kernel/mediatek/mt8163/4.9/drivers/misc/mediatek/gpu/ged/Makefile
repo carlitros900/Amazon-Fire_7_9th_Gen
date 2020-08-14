@@ -17,13 +17,13 @@ MTK_TOP = $(srctree)/drivers/misc/mediatek/
 VER:=eng
 
 #ccflags-y += -DGED_KPI_DEBUG
-ifneq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6759" "mt6799" "mt6763" "mt6739" "mt6758" "mt6775" "mt6771" "mt6765"))
+ifneq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6759" "mt6799" "mt6763" "mt6739" "mt6758" "mt6775" "mt6771" "mt6765" "mt6761" "mt3967"))
 ccflags-y += -DGED_KPI_MET_DEBUG
 ccflags-y += -DMTK_GED_KPI
 ccflags-y += -DGED_KPI_CPU_BOOST
 endif
 
-ifneq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6775" "mt6771" "mt6765"))
+ifneq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6775" "mt6771" "mt6765" "mt6761"))
 ifeq ($(CONFIG_MTK_GPU_COMMON_DVFS_SUPPORT),y)
 ccflags-y += -DGED_ENABLE_FB_DVFS
 endif
@@ -49,9 +49,15 @@ ifneq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6765"))
 #ccflags-y += -DCONFIG_MTK_QOS_SUPPORT
 endif
 
-ifneq (,$(filter $(TARGET_BUILD_VARIANT), user))
+
+ifneq ($(strip $(TARGET_BUILD_VARIANT)),)
+ifneq ($(strip $(TARGET_BUILD_VARIANT)),eng)
 VER:=user
+ifeq ($(CONFIG_EXTREME_LOW_RAM), y)
+ccflags-y += -DGED_LOG_SIZE_LIMITED
 ccflags-y += -DGED_BUFFER_LOG_DISABLE
+endif
+endif
 endif
 
 ccflags-y += -DMET_USER_EVENT_SUPPORT
@@ -77,8 +83,13 @@ ccflags-y += \
 else
 #$(info *CONFIG_MTK_PLATFORM 1 = $(word 1,$(CONFIG_MTK_PLATFORM)))
 ccflags-y += \
-		 -I$(srctree)/drivers/misc/mediatek/cmdq/v3 \
-		 -I$(srctree)/drivers/misc/mediatek/cmdq/v3/$(subst ",,$(CONFIG_MTK_PLATFORM))
+		 -I$(srctree)/drivers/misc/mediatek/cmdq/v3
+
+ifeq ($(CONFIG_MACH_MT6761),y)
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/v3/mt6765/
+else
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/v3/$(subst ",,$(CONFIG_MTK_PLATFORM))
+endif
 endif
 
 #$(info $$CONFIG_MTK_GPU_COMMON_DVFS_SUPPORT is [${CONFIG_MTK_GPU_COMMON_DVFS_SUPPORT}])

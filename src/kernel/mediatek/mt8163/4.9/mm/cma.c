@@ -36,6 +36,7 @@
 #include <linux/highmem.h>
 #include <linux/io.h>
 #include <trace/events/cma.h>
+#include <linux/swap.h>
 
 #include "cma.h"
 
@@ -78,7 +79,7 @@ void cma_get_range(phys_addr_t *base, phys_addr_t *size)
 }
 
 static unsigned long cma_bitmap_aligned_mask(const struct cma *cma,
-					     int align_order)
+					     unsigned int align_order)
 {
 	if (align_order <= cma->order_per_bit)
 		return 0;
@@ -86,17 +87,14 @@ static unsigned long cma_bitmap_aligned_mask(const struct cma *cma,
 }
 
 /*
- * Find a PFN aligned to the specified order and return an offset represented in
- * order_per_bits.
+ * Find the offset of the base PFN from the specified align_order.
+ * The value returned is represented in order_per_bits.
  */
 static unsigned long cma_bitmap_aligned_offset(const struct cma *cma,
-					       int align_order)
+					       unsigned int align_order)
 {
-	if (align_order <= cma->order_per_bit)
-		return 0;
-
-	return (ALIGN(cma->base_pfn, (1UL << align_order))
-		- cma->base_pfn) >> cma->order_per_bit;
+	return (cma->base_pfn & ((1UL << align_order) - 1))
+		>> cma->order_per_bit;
 }
 
 static unsigned long cma_bitmap_pages_to_bits(const struct cma *cma,
@@ -507,3 +505,31 @@ bool cma_release(struct cma *cma, const struct page *pages, unsigned int count)
 
 	return true;
 }
+
+#ifdef CONFIG_MTEE_CMA_SECURE_MEMORY
+/**
+ * cma_alloc_large() - Allocate large chunk of memory from the cma zone.
+ * @cma:   Contiguous memory region for which the allocation is performed.
+ * @count: Requested number of pages.
+ * @align: Requested alignment of pages (in PAGE_SIZE order).
+ *
+ * Normal cma_alloc will easily to fail and/or take lots of time when user
+ * trying to allocate large chunk of memory from it. Add helper function
+ * to improve this usage.
+ *
+ * return first page of allocated memory.
+ */
+struct page *cma_alloc_large(struct cma *cma, int count, unsigned int align)
+{
+	struct page *page;
+	int retries = 0;
+
+	for (retries = 0; retries < 10; retries++) {
+		page = cma_alloc(cma, count, align);
+		if (page)
+			return page;
+	}
+
+	return 0;
+}
+#endif

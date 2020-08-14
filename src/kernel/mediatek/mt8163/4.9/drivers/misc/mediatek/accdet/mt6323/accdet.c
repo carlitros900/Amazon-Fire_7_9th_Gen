@@ -1440,11 +1440,12 @@ void accdet_get_dts_data(void)
 	#else
 	int three_key[4];
 	#endif
+	int ret = 0;
 
 	ACCDET_DEBUG("[ACCDET]Start accdet_get_dts_data");
 	node = of_find_matching_node(node, accdet_of_match);
 	if (node) {
-		of_property_read_u32_array(node, "headset-mode-setting",
+		ret = of_property_read_u32_array(node, "headset-mode-setting",
 			 debounce, ARRAY_SIZE(debounce));
 		of_property_read_u32(node, "accdet-mic-vol",
 			 &accdet_dts_data.mic_mode_vol);
@@ -1457,20 +1458,24 @@ void accdet_get_dts_data(void)
 		of_property_read_u32(node, "eint-debounce",
 			 &accdet_dts_data.eint_debounce);
 		#ifdef CONFIG_FOUR_KEY_HEADSET
-		of_property_read_u32_array(node, "headset-four-key-threshold",
+		ret = of_property_read_u32_array(node,
+			"headset-four-key-threshold",
 			 four_key, ARRAY_SIZE(four_key));
-		memcpy(&accdet_dts_data.four_key, four_key+1,
-		  sizeof(struct four_key_threshold));
+		if (!ret)
+			memcpy(&accdet_dts_data.four_key, four_key+1,
+			  sizeof(struct four_key_threshold));
 		ACCDET_DEBUG("[Accdet]mid key=%d,voice=%d,up=%d,down=%d\n",
 			 accdet_dts_data.four_key.mid_key_four,
 			 accdet_dts_data.four_key.voice_key_four,
 			 accdet_dts_data.four_key.up_key_four,
 			 accdet_dts_data.four_key.down_key_four);
 		#else
-		of_property_read_u32_array(node, "headset-three-key-threshold",
+		ret = of_property_read_u32_array(node,
+			"headset-three-key-threshold",
 			 three_key, ARRAY_SIZE(three_key));
-		memcpy(&accdet_dts_data.three_key, three_key+1,
-			 sizeof(struct three_key_threshold));
+		if (!ret)
+			memcpy(&accdet_dts_data.three_key, three_key+1,
+				 sizeof(struct three_key_threshold));
 		ACCDET_DEBUG("[Accdet]mid-Key=%d, up_key=%d, down_key=%d\n",
 			 accdet_dts_data.three_key.mid_key,
 			 accdet_dts_data.three_key.up_key,

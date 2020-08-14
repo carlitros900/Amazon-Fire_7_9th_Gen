@@ -105,7 +105,7 @@ static int dt_to_keycombo_cfg(struct platform_device *pdev,
 	pr_info("%s: entry\n", __func__);
 	/* get keys_down mapping */
 	down_size = of_property_count_strings(dev->of_node, PROP_KEYS_DOWN);
-	if (IS_ERR_VALUE(down_size)) {
+	if (IS_ERR_VALUE((unsigned long)down_size)) {
 		dev_err(dev, "%s: Failed to get keys_down mapping %d\n",
 					__func__, down_size);
 		return 0;
@@ -159,7 +159,7 @@ static int dt_to_keycombo_cfg(struct platform_device *pdev,
 
 	/*get keys_up mapping */
 	up_size = of_property_count_strings(dev->of_node, PROP_KEYS_UP);
-	if (IS_ERR_VALUE(up_size)) {
+	if (IS_ERR_VALUE((unsigned long)up_size)) {
 		dev_err(dev, "%s: keys_up mapping is not exist: %d\n",
 					__func__, up_size);
 		goto bypass;

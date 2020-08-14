@@ -2562,15 +2562,6 @@ static unsigned int _calc_new_opp_idx(struct mt_cpu_dvfs *p, int new_opp_idx)
 	}
 #endif /* CONFIG_CPU_DVFS_DOWNGRADE_FREQ */
 
-	/* search thermal limited freq */
-	idx = _thermal_limited_verify(p, new_opp_idx);
-
-	if (idx != -1 && idx != new_opp_idx) {
-		new_opp_idx = idx;
-		cpufreq_dbg("%s(): thermal limited freq, idx = %d\n"
-			    , __func__, new_opp_idx);
-	}
-
 	/* for early suspend */
 	if (p->dvfs_disable_by_early_suspend) {
 		if (is_fix_freq_in_ES)
@@ -2608,6 +2599,16 @@ static unsigned int _calc_new_opp_idx(struct mt_cpu_dvfs *p, int new_opp_idx)
 			cpufreq_dbg(", idx = %d\n", new_opp_idx);
 		}
 	}
+
+        /* search thermal limited freq */
+        idx = _thermal_limited_verify(p, new_opp_idx);
+        if (idx != -1 && idx != new_opp_idx) {
+                if (cpu_dvfs_get_freq_by_idx(p, idx) < cpu_dvfs_get_freq_by_idx(p, new_opp_idx)) {
+                        new_opp_idx = idx;
+                        cpufreq_dbg("%s(): thermal limited freq, idx = %d\n"
+                                    , __func__, new_opp_idx);
+                }
+        }
 
 	/* for ptpod init */
 	if (p->dvfs_disable_by_ptpod) {
@@ -3762,6 +3763,7 @@ static ssize_t cpufreq_limited_max_freq_by_user_proc_write(struct file *file
 		p->limited_max_freq_by_user = limited_max_freq;
 
 		if (cpu_dvfs_is_available(p)
+		    && (p->limited_max_freq_by_user)
 		    && (p->limited_max_freq_by_user
 			< cpu_dvfs_get_cur_freq(p))) {
 			struct cpufreq_policy *policy

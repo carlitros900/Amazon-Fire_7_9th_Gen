@@ -65,7 +65,7 @@ struct DISP_OVL_INFO {
 	int layer;
 
 	unsigned long addr;
-	enum DP_COLOR_ENUM fmt;
+	unsigned int fmt;
 
 	int x;
 	int y;
@@ -78,11 +78,12 @@ struct DISP_OVL_INFO {
 #define COLOR_TUNING_INDEX 19
 #define THSHP_TUNING_INDEX 12
 #define THSHP_PARAM_MAX 83
+#define PARTIAL_Y_INDEX 10
 
 #define GLOBAL_SAT_SIZE 10
 #define CONTRAST_SIZE 10
 #define BRIGHTNESS_SIZE 10
-#define PARTIAL_Y_SIZE 28
+#define PARTIAL_Y_SIZE 16
 #define PQ_HUE_ADJ_PHASE_CNT 4
 #define PQ_SAT_ADJ_PHASE_CNT 4
 #define PQ_PARTIALS_CONTROL 5
@@ -90,14 +91,23 @@ struct DISP_OVL_INFO {
 #define SKIN_TONE_SIZE 8  /* (-6) */
 #define GRASS_TONE_SIZE 6 /* (-2) */
 #define SKY_TONE_SIZE 3
+#define CCORR_COEF_CNT 4 /* ccorr feature */
 
+enum TONE_ENUM {
+	PURP_TONE = 0,
+	SKIN_TONE = 1,
+	GRASS_TONE = 2,
+	SKY_TONE = 3
+};
 struct DISP_PQ_PARAM {
 	unsigned int u4SHPGain; /* 0 : min , 9 : max. */
 	unsigned int u4SatGain; /* 0 : min , 9 : max. */
+	unsigned int u4PartialY;   /* 0 : min , 9 : max. */
 	unsigned int u4HueAdj[PQ_HUE_ADJ_PHASE_CNT];
 	unsigned int u4SatAdj[PQ_SAT_ADJ_PHASE_CNT];
 	unsigned int u4Contrast;   /* 0 : min , 9 : max. */
 	unsigned int u4Brightness; /* 0 : min , 9 : max. */
+	unsigned int u4Ccorr;      /* 0 : min , 3 : max. ccorr feature */
 };
 
 struct DISP_PQ_WIN_PARAM {
@@ -108,24 +118,47 @@ struct DISP_PQ_WIN_PARAM {
 	int end_y;
 };
 
-struct DISPLAY_PQ_T {
-	unsigned char GLOBAL_SAT[GLOBAL_SAT_SIZE];
-	unsigned char CONTRAST[CONTRAST_SIZE];
-	unsigned short BRIGHTNESS[BRIGHTNESS_SIZE];
-	unsigned char PARTIAL_Y[PARTIAL_Y_SIZE];
-	unsigned char PURP_TONE_S[COLOR_TUNING_INDEX][PQ_PARTIALS_CONTROL]
-				 [PURP_TONE_SIZE];
-	unsigned char SKIN_TONE_S[COLOR_TUNING_INDEX][PQ_PARTIALS_CONTROL]
-				 [SKIN_TONE_SIZE];
-	unsigned char GRASS_TONE_S[COLOR_TUNING_INDEX][PQ_PARTIALS_CONTROL]
-				  [GRASS_TONE_SIZE];
-	unsigned char SKY_TONE_S[COLOR_TUNING_INDEX][PQ_PARTIALS_CONTROL]
-				[SKY_TONE_SIZE];
-	unsigned char PURP_TONE_H[COLOR_TUNING_INDEX][PURP_TONE_SIZE];
-	unsigned char SKIN_TONE_H[COLOR_TUNING_INDEX][SKIN_TONE_SIZE];
-	unsigned char GRASS_TONE_H[COLOR_TUNING_INDEX][GRASS_TONE_SIZE];
-	unsigned char SKY_TONE_H[COLOR_TUNING_INDEX][SKY_TONE_SIZE];
+struct DISP_PQ_MAPPING_PARAM {
+	int image;
+	int video;
+	int camera;
 };
+
+struct DISPLAY_PQ_T {
+	unsigned int GLOBAL_SAT[GLOBAL_SAT_SIZE];
+	unsigned int CONTRAST[CONTRAST_SIZE];
+	unsigned int BRIGHTNESS[BRIGHTNESS_SIZE];
+	unsigned int PARTIAL_Y[PARTIAL_Y_INDEX][PARTIAL_Y_SIZE];
+	unsigned int PURP_TONE_S[COLOR_TUNING_INDEX][PQ_PARTIALS_CONTROL]
+				 [PURP_TONE_SIZE];
+	unsigned int SKIN_TONE_S[COLOR_TUNING_INDEX][PQ_PARTIALS_CONTROL]
+				 [SKIN_TONE_SIZE];
+	unsigned int GRASS_TONE_S[COLOR_TUNING_INDEX][PQ_PARTIALS_CONTROL]
+				  [GRASS_TONE_SIZE];
+	unsigned int SKY_TONE_S[COLOR_TUNING_INDEX][PQ_PARTIALS_CONTROL]
+				[SKY_TONE_SIZE];
+	unsigned int PURP_TONE_H[COLOR_TUNING_INDEX][PURP_TONE_SIZE];
+	unsigned int SKIN_TONE_H[COLOR_TUNING_INDEX][SKIN_TONE_SIZE];
+	unsigned int GRASS_TONE_H[COLOR_TUNING_INDEX][GRASS_TONE_SIZE];
+	unsigned int SKY_TONE_H[COLOR_TUNING_INDEX][SKY_TONE_SIZE];
+	unsigned int  CCORR_COEF[CCORR_COEF_CNT][3][3];
+};
+
+struct DISPLAY_COLOR_REG_T {
+	unsigned int GLOBAL_SAT;
+	unsigned int CONTRAST;
+	unsigned int BRIGHTNESS;
+	unsigned int PARTIAL_Y[PARTIAL_Y_SIZE];
+	unsigned int PURP_TONE_S[PQ_PARTIALS_CONTROL][PURP_TONE_SIZE];
+	unsigned int SKIN_TONE_S[PQ_PARTIALS_CONTROL][SKIN_TONE_SIZE];
+	unsigned int GRASS_TONE_S[PQ_PARTIALS_CONTROL][GRASS_TONE_SIZE];
+	unsigned int SKY_TONE_S[PQ_PARTIALS_CONTROL][SKY_TONE_SIZE];
+	unsigned int PURP_TONE_H[PURP_TONE_SIZE];
+	unsigned int SKIN_TONE_H[SKIN_TONE_SIZE];
+	unsigned int GRASS_TONE_H[GRASS_TONE_SIZE];
+	unsigned int SKY_TONE_H[SKY_TONE_SIZE];
+};
+
 
 struct DISPLAY_TDSHP_T {
 	unsigned int entry[THSHP_TUNING_INDEX][THSHP_PARAM_MAX];
@@ -228,6 +261,7 @@ enum DISP_INTERLACE_FORMAT {
 
 #define DISP_IOCTL_RUN_DPF _IOW(DISP_IOCTL_MAGIC, 30, int)
 #define DISP_IOCTL_CHECK_OVL _IOR(DISP_IOCTL_MAGIC, 31, int)
+#define DISP_IOCTL_GET_OVL  _IOWR(DISP_IOCTL_MAGIC, 32, struct DISP_OVL_INFO)
 
 #define DISP_IOCTL_EXEC_COMMAND                                                \
 	_IOW(DISP_IOCTL_MAGIC, 33, struct DISP_EXEC_COMMAND)
@@ -304,6 +338,9 @@ enum DISP_INTERLACE_FORMAT {
 #define DISP_IOCTL_READ_SW_REG                                                 \
 	_IOWR(DISP_IOCTL_MAGIC, 78,                                            \
 	      struct DISP_READ_REG) /* also defined in atci_pq_cmd.h */
+
+#define DISP_IOCTL_SET_COLOR_REG    \
+	_IOWR(DISP_IOCTL_MAGIC, 79, struct DISPLAY_COLOR_REG_T)
 
 /* OD */
 #define DISP_IOCTL_OD_CTL _IOWR(DISP_IOCTL_MAGIC, 80, struct DISP_OD_CMD)

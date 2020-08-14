@@ -302,7 +302,7 @@ static inline void gtp_gpio_direction_output(unsigned int pin, int level)
 #define GTP_DRIVER_VERSION          "V2.4<2014/11/28>"
 #define GTP_I2C_NAME                "Goodix-TS"
 #define GT91XX_CONFIG_PROC_FILE     "gt9xx_config"
-#define GT91XX_FW_VERSION_PROC_FILE     "gt9xx_fw_version"
+#define GT91XX_FW_VERSION_PROC_FILE     "tp_fw_version"
 #define GTP_POLL_TIME         10
 #define GTP_ADDR_LENGTH       2
 #define GTP_CONFIG_MIN_LENGTH 186

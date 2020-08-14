@@ -218,8 +218,9 @@ static void CamPipeMgr_StorePipeInfo(unsigned long PipeMask)
 			    CamPipeMgr.PipeInfo[i].Tgid == 0) {
 				CamPipeMgr.PipeInfo[i].Pid = current->pid;
 				CamPipeMgr.PipeInfo[i].Tgid = current->tgid;
-				strcpy(CamPipeMgr.PipeInfo[i].ProcName,
-				       current->comm);
+				strncpy(CamPipeMgr.PipeInfo[i].ProcName,
+				       current->comm, TASK_COMM_LEN - 1);
+				CamPipeMgr.PipeInfo[i].ProcName[TASK_COMM_LEN - 1] = '\0';
 				CamPipeMgr_GetTime(
 					&(CamPipeMgr.PipeInfo[i].TimeS),
 					&(CamPipeMgr.PipeInfo[i].TimeUS));
@@ -252,8 +253,10 @@ static void CamPipeMgr_RemovePipeInfo(unsigned long PipeMask)
 			    CamPipeMgr.PipeInfo[i].Tgid != 0) {
 				CamPipeMgr.PipeInfo[i].Pid = 0;
 				CamPipeMgr.PipeInfo[i].Tgid = 0;
-				strcpy(CamPipeMgr.PipeInfo[i].ProcName,
-				       CAM_PIPE_MGR_PROC_NAME);
+				strncpy(CamPipeMgr.PipeInfo[i].ProcName,
+				       CAM_PIPE_MGR_PROC_NAME,
+				       TASK_COMM_LEN - 1);
+				CamPipeMgr.PipeInfo[i].ProcName[TASK_COMM_LEN - 1] = '\0';
 			} else {
 				LOG_WRN("PipeMask(0x%lX),Pipe(%ld,%s),Pid(%d),Tgid(%d),Time(%ld.%06ld)",
 					PipeMask, i,
@@ -347,7 +350,9 @@ static int CamPipeMgr_Open(struct inode *pInode, struct file *pFile)
 		pProc = (struct CAM_PIPE_MGR_PROC_STRUCT *)pFile->private_data;
 		pProc->Pid = 0;
 		pProc->Tgid = 0;
-		strcpy(pProc->ProcName, CAM_PIPE_MGR_PROC_NAME);
+		strncpy(pProc->ProcName, CAM_PIPE_MGR_PROC_NAME,
+				TASK_COMM_LEN - 1);
+		pProc->ProcName[TASK_COMM_LEN - 1] = '\0';
 		pProc->PipeMask = 0;
 		pProc->TimeS = Sec;
 		pProc->TimeUS = USec;
@@ -573,8 +578,10 @@ static long CamPipeMgr_Ioctl(struct file *pFile, unsigned int Cmd,
 					/**/ if (pProc->Tgid == 0) {
 						pProc->Pid = current->pid;
 						pProc->Tgid = current->tgid;
-						strcpy(pProc->ProcName,
-						       current->comm);
+						strncpy(pProc->ProcName,
+						current->comm,
+						TASK_COMM_LEN - 1);
+						pProc->ProcName[TASK_COMM_LEN - 1] = '\0';
 						CamPipeMgr_SpinUnlock();
 						/**/ if (CamPipeMgr.LogMask &
 							 Lock.PipeMask) {
@@ -640,14 +647,18 @@ static long CamPipeMgr_Ioctl(struct file *pFile, unsigned int Cmd,
 				/* Store info before clear. */
 				Pid = pProc->Pid;
 				Tgid = pProc->Tgid;
-				strcpy(ProcName, pProc->ProcName);
+				strncpy(ProcName, pProc->ProcName,
+					TASK_COMM_LEN - 1);
+				pProc->ProcName[TASK_COMM_LEN - 1] = '\0';
 				/*  */
 				pProc->PipeMask &= (~Unlock.PipeMask);
 				if (pProc->PipeMask == 0) {
 					pProc->Pid = 0;
 					pProc->Tgid = 0;
-					strcpy(pProc->ProcName,
-					       CAM_PIPE_MGR_PROC_NAME);
+					strncpy(pProc->ProcName,
+					       CAM_PIPE_MGR_PROC_NAME,
+					       TASK_COMM_LEN - 1);
+					pProc->ProcName[TASK_COMM_LEN - 1] = '\0';
 				}
 				CamPipeMgr_SpinUnlock();
 				if (CamPipeMgr.LogMask & Unlock.PipeMask) {
@@ -1297,17 +1308,26 @@ static int CamPipeMgr_Probe(struct platform_device *pDev)
 	for (i = 0; i < CAM_PIPE_MGR_PIPE_AMOUNT; i++) {
 		CamPipeMgr.PipeInfo[i].Pid = 0;
 		CamPipeMgr.PipeInfo[i].Tgid = 0;
-		strcpy(CamPipeMgr.PipeInfo[i].ProcName, CAM_PIPE_MGR_PROC_NAME);
+		strncpy(CamPipeMgr.PipeInfo[i].ProcName,
+			CAM_PIPE_MGR_PROC_NAME,
+			TASK_COMM_LEN - 1);
+		CamPipeMgr.PipeInfo[i].ProcName[TASK_COMM_LEN - 1] = '\0';
 		CamPipeMgr.PipeInfo[i].TimeS = 0;
 		CamPipeMgr.PipeInfo[i].TimeUS = 0;
 	}
 	/*  */
-	strcpy(CamPipeMgr.PipeName[CAM_PIPE_MGR_PIPE_CAM_IO],
-	       CAM_PIPE_MGR_PIPE_NAME_CAM_IO);
-	strcpy(CamPipeMgr.PipeName[CAM_PIPE_MGR_PIPE_POST_PROC],
-	       CAM_PIPE_MGR_PIPE_NAME_POST_PROC);
-	strcpy(CamPipeMgr.PipeName[CAM_PIPE_MGR_PIPE_XDP_CAM],
-	       CAM_PIPE_MGR_PIPE_NAME_XDP_CAM);
+	strncpy(CamPipeMgr.PipeName[CAM_PIPE_MGR_PIPE_CAM_IO],
+	       CAM_PIPE_MGR_PIPE_NAME_CAM_IO,
+	       CAM_PIPE_MGR_PIPE_NAME_LEN - 1);
+	CamPipeMgr.PipeName[CAM_PIPE_MGR_PIPE_CAM_IO][CAM_PIPE_MGR_PIPE_NAME_LEN - 1] = '\0';
+	strncpy(CamPipeMgr.PipeName[CAM_PIPE_MGR_PIPE_POST_PROC],
+	       CAM_PIPE_MGR_PIPE_NAME_POST_PROC,
+	       CAM_PIPE_MGR_PIPE_NAME_LEN - 1);
+	CamPipeMgr.PipeName[CAM_PIPE_MGR_PIPE_POST_PROC][CAM_PIPE_MGR_PIPE_NAME_LEN - 1] = '\0';
+	strncpy(CamPipeMgr.PipeName[CAM_PIPE_MGR_PIPE_XDP_CAM],
+	       CAM_PIPE_MGR_PIPE_NAME_XDP_CAM,
+	       CAM_PIPE_MGR_PIPE_NAME_LEN - 1);
+	CamPipeMgr.PipeName[CAM_PIPE_MGR_PIPE_XDP_CAM][CAM_PIPE_MGR_PIPE_NAME_LEN - 1] = '\0';
 	/*  */
 	CamPipeMgr_UpdatePipeLockTable(CamPipeMgr.Mode.ScenSw);
 	CamPipeMgr.LogMask = 0; /*(CAM_PIPE_MGR_PIPE_MASK_CAM_IO |

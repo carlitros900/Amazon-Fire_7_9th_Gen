@@ -40,10 +40,6 @@
 #include "lcm_drv.h"
 /*#include "ddp_irq.h"*/
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-#endif
-
 #define FRAME_WIDTH  (600)
 #define FRAME_HEIGHT (1024)
 #define REGFLAG_DELAY 0xFC
@@ -725,10 +721,21 @@ static void lcm_init_lcm(void)
 
 static void lcm_suspend(void)
 {
+#if defined(CONFIG_AMAZON_METRICS_LOG) || defined(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+	char buf[METRICS_STR_LEN] = {0};
+#endif
+
 #ifdef CONFIG_AMAZON_METRICS_LOG
-	char buf[128];
 	snprintf(buf, sizeof(buf), "%s:lcd:suspend=1;CT;1:NR", __func__);
 	log_to_metrics(ANDROID_LOG_INFO, "LCDEvent", buf);
+#endif
+
+#ifdef CONFIG_AMAZON_MINERVA_METRICS_LOG
+	minerva_metrics_log(buf, METRICS_STR_LEN,
+			"%s:%s:100:%s,%s,%s,%s,lcm_state=lcm_suspend;SY,ESD_Recovery=0;IN:us-east-1",
+			METRICS_LCD_GROUP_ID, METRICS_LCD_SCHEMA_ID,
+			PREDEFINED_ESSENTIAL_KEY, PREDEFINED_MODEL_KEY,
+			PREDEFINED_TZ_KEY, PREDEFINED_DEVICE_LANGUAGE_KEY);
 #endif
 
 	push_table(lcm_suspend_setting, sizeof(lcm_suspend_setting) / sizeof(struct LCM_setting_table), 1);
@@ -762,10 +769,21 @@ static void lcm_resume_power(void)
 
 static void lcm_resume(void)
 {
+#if defined(CONFIG_AMAZON_METRICS_LOG) || defined(CONFIG_AMAZON_MINERVA_METRICS_LOG)
+	char buf[METRICS_STR_LEN] = {0};
+#endif
+
 #ifdef CONFIG_AMAZON_METRICS_LOG
-	char buf[128];
 	snprintf(buf, sizeof(buf), "%s:lcd:resume=1;CT;1:NR", __func__);
 	log_to_metrics(ANDROID_LOG_INFO, "LCDEvent", buf);
+#endif
+
+#ifdef CONFIG_AMAZON_MINERVA_METRICS_LOG
+	minerva_metrics_log(buf, METRICS_STR_LEN,
+			"%s:%s:100:%s,%s,%s,%s,lcm_state=lcm_resume;SY,ESD_Recovery=0;IN:us-east-1",
+			METRICS_LCD_GROUP_ID, METRICS_LCD_SCHEMA_ID,
+			PREDEFINED_ESSENTIAL_KEY, PREDEFINED_MODEL_KEY,
+			PREDEFINED_TZ_KEY, PREDEFINED_DEVICE_LANGUAGE_KEY);
 #endif
 
 	get_lcm_id();

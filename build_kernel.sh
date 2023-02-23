@@ -3,7 +3,7 @@
 #
 #  build_kernel.sh
 #
-#  Copyright (c) 2016-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#  Copyright (c) 2016-2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 #
 ################################################################################
 
@@ -126,7 +126,7 @@ function setup_output_dir {
 
 function download_toolchain {
     echo "Cloning toolchain ${TOOLCHAIN_REPO} to ${TOOLCHAIN_DIR}"
-    git clone "${TOOLCHAIN_REPO}" "${TOOLCHAIN_DIR}"
+    git clone  -b pie-release "${TOOLCHAIN_REPO}" "${TOOLCHAIN_DIR}"
     if [[ $? -ne 0 ]]
     then
         echo "ERROR: Could not clone toolchain from ${TOOLCHAIN_REPO}."
@@ -209,11 +209,10 @@ function exec_build_kernel {
 
     if [[ $? -ne 0 ]]
     then
-	echo "Build failed"
-	exit 10
+        echo "Build failed"
+        exit 10
     fi
-    
-    
+
     popd
 }
 
@@ -231,6 +230,18 @@ function copy_to_output {
         cp -v "${CPFILE}" "${TARGET_DIR}/${CPFILE}"
     done
     popd
+}
+
+function validate_output {
+    echo "Listing output files"
+    local IFS=":"
+    for IMAGE in ${KERNEL_IMAGES};do
+        if [ ! -f ${TARGET_DIR}/${IMAGE} ]; then
+            echo "ERROR: Missing kernel output image ${IMAGE}" >&2
+            exit 1
+        fi
+        ls -l ${TARGET_DIR}/${IMAGE}
+    done
 }
 
 ################################################################################
@@ -256,3 +267,6 @@ exec_build_kernel
 
 # Phase 4: move to output
 copy_to_output
+
+# Phase 5: verify output
+validate_output

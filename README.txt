@@ -11,23 +11,64 @@ AMAZON WILL NOT BE LIABLE FOR ANY DAMAGES OF ANY KIND ARISING FROM THE USE OF
 THE BUILD MATERIALS INCLUDING, BUT NOT LIMITED TO, DIRECT, INDIRECT,
 INCIDENTAL, PUNITIVE, AND CONSEQUENTIAL DAMAGES.
 
+
 BUILDING THE KERNEL
 -------------------
-You will need the files platform.tar and build_kernel.tar.gz from the
-tarball to build the kernel.
 
-1.  Extract the build_kernel.tar.gz tarball to a directory of your choosing.
+1. You may need to install prerequisite libraries. On a Debian-based system:
 
-2.  Obtain a copy of 32 bit arm-eabi-6.3.1 compiler.
+    $ sudo apt-get install -y \
+        git gnupg flex bison gperf build-essential zip curl \
+        zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev \
+        x11proto-core-dev libx11-dev lib32z-dev ccache libgl1-mesa-dev \
+        libxml2-utils xsltproc unzip python lib32z1 lib32stdc++6 libssl-dev \
+        libswitch-perl swig maven libncurses5 xxd bc vim
 
-3.  Update build_kernel_config.sh and paste in the path to the root of the
-    copy of the compiler in the CROSS_COMPILER_PATH variable. If needed,
-    also update the TOOLCHAIN_PREFIX to match the prefix of the cross compiler
-    used.
+2. You may need to install pycryptodome
 
-4.  Execute the script by running:
+   $ curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
+   $ python2 get-pip.py
+   $ pip install pycryptodome
 
-    build_kernel.sh "<path to platform.tar>" "<target output directory>"
+3. You may need to change /bin/sh to bash:
+
+    sudo mv /bin/sh /bin/sh.orig
+    sudo ln -s /bin/bash /bin/sh
+
+4. Build may use prebuilt binary minigzip, a 32-bit binary, and if you are
+   using 64-bit Linux, you may need to install additional libraries:
+
+        Ubuntu 12.04:
+        sudo sh -c "echo 'foreign-architecture i386' > /etc/dpkg/dpkg.cfg.d/multiarch"
+        sudo apt-get update
+        sudo apt-get install multiarch-support
+        sudo apt-get install libc6:i386 libncurses5:i386 libstdc++6:i386
+
+5.  Check build_kernel_config.sh if any additional compilers are needed.
+
+6.  Execute the script by running:
+
+    ./build_kernel.sh "<path to platform.tar>" "<target output directory>"
+
+
+BUILDING BUSYBOX (if applicable)
+--------------------------------
+
+1.  Check build_busybox_config.sh if any additional compilers are needed.
+
+2.  Execute the script by running:
+
+    ./build_busybox.sh "<path to platform.tar>" "<target output directory>"
+
+
+BUILDING UBOOT (if applicable)
+------------------------------
+
+1.  Check build_uboot_config.sh if any additional compilers are needed.
+
+2.  Execute the script by running:
+
+    ./build_uboot.sh "<path to platform.tar>" "<target output directory>"
 
 
 BUILDING LIBRARIES
@@ -41,7 +82,7 @@ execution environment to the root of the installed JDK.
 
 2. Download repo and the source code for AOSP per the instructions in
 https://source.android.com/source/downloading.html .  For the libraries
-packaged in this tarball, you should use "android-7.1.2_r6" as the tagged branch
+packaged in this tarball, you should use "android-9.0.0_r1" as the tagged branch
 for checkout, by passing the value above into repo with the -b switch.
 
 3. After completing the 'repo sync' command in the above instructions, copy in
@@ -50,7 +91,7 @@ checked out source code, modifying files in place if needed.
 
 4. Build the source code per the instructions in
 https://source.android.com/source/building.html .  For the purposes of testing
-the libraries, we used the target "aosp_flo-userdebug" as the target of the 'lunch'
+the libraries, we used the target "aosp_walleye-userdebug" as the target of the 'lunch'
 command.
 
 5. Upon completion of the build, the relevant libraries can be found under the

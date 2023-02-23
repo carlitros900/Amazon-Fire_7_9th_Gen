@@ -98,8 +98,8 @@ struct mtkts_bts_channel_param {
 #include "inc/mtk_ts_board_abc123.h"
 #elif defined(CONFIG_THERMAL_MUSTANG)
 #include "inc/mtk_ts_board_mustang.h"
-#elif defined(CONFIG_THERMAL_KAYAK)
-#include "inc/mtk_ts_board_kayak.h"
+#elif defined(CONFIG_THERMAL_abm123)
+#include "inc/mtk_ts_board_abm123.h"
 #elif defined(CONFIG_THERMAL_abc123)
 #include "inc/mtk_ts_board_abc123.h"
 #else
